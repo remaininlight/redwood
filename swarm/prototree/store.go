@@ -1,9 +1,14 @@
 package prototree
 
 import (
+	"context"
 	"sync"
+	"time"
+
+	"github.com/pkg/errors"
 
 	"redwood.dev/log"
+	"redwood.dev/process"
 	"redwood.dev/state"
 	"redwood.dev/types"
 	"redwood.dev/utils"
@@ -19,10 +24,13 @@ type Store interface {
 	SetMaxPeersPerSubscription(max uint64) error
 	TxSeenByPeer(deviceSpecificID, stateURI string, txID types.ID) bool
 	MarkTxSeenByPeer(deviceSpecificID, stateURI string, txID types.ID) error
+	PruneTxSeenRecordsOlderThan(threshold time.Duration) error
 }
 
 type store struct {
+	process.Process
 	log.Logger
+
 	db *state.DBTree
 
 	data   storeData
@@ -39,23 +47,41 @@ type subscribedStateURIListener struct {
 type storeData struct {
 	SubscribedStateURIs     utils.StringSet
 	MaxPeersPerSubscription uint64
-	TxsSeenByPeers          map[string]map[string]map[types.ID]bool
+	TxsSeenByPeers          map[string]map[string]map[types.ID]uint64
 }
 
 type storeDataCodec struct {
-	SubscribedStateURIs     []string                              `tree:"subscribedStateURIs"`
-	MaxPeersPerSubscription uint64                                `tree:"maxPeersPerSubscription"`
-	TxsSeenByPeers          map[string]map[string]map[string]bool `tree:"txsSeenByPeers"`
+	SubscribedStateURIs     map[string]bool                         `tree:"subscribedStateURIs"`
+	MaxPeersPerSubscription uint64                                  `tree:"maxPeersPerSubscription"`
+	TxsSeenByPeers          map[string]map[string]map[string]uint64 `tree:"txsSeenByPeers"`
 }
+
+var storeRootKeypath = state.Keypath("prototree")
 
 func NewStore(db *state.DBTree) (*store, error) {
 	s := &store{
+		Process:                     *process.New("prototree store"),
 		Logger:                      log.NewLogger("prototree store"),
 		db:                          db,
 		subscribedStateURIListeners: make(map[*subscribedStateURIListener]struct{}),
 	}
+	s.Infof(0, "opening prototree store")
 	err := s.loadData()
 	return s, err
+}
+
+func (s *store) Start() error {
+	err := s.Process.Start()
+	if err != nil {
+		return err
+	}
+
+	pruneTxsTask := NewPruneTxsTask(5*time.Minute, s)
+	err = s.Process.SpawnChild(nil, pruneTxsTask)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *store) loadData() error {
@@ -63,64 +89,71 @@ func (s *store) loadData() error {
 	defer node.Close()
 
 	var codec storeDataCodec
-	err := node.NodeAt(state.Keypath("prototree"), nil).Scan(&codec)
-	if err != nil {
+	err := node.NodeAt(storeRootKeypath, nil).Scan(&codec)
+	if errors.Cause(err) == types.Err404 {
+		// do nothing
+	} else if err != nil {
 		return err
 	}
 
-	txsSeenByPeers := make(map[string]map[string]map[types.ID]bool)
+	txsSeenByPeers := make(map[string]map[string]map[types.ID]uint64)
 	for deviceSpecificID, x := range codec.TxsSeenByPeers {
-		txsSeenByPeers[deviceSpecificID] = make(map[string]map[types.ID]bool)
+		txsSeenByPeers[deviceSpecificID] = make(map[string]map[types.ID]uint64)
 		for stateURI, y := range x {
-			txsSeenByPeers[deviceSpecificID][stateURI] = make(map[types.ID]bool)
-			for txIDStr, seen := range y {
+			txsSeenByPeers[deviceSpecificID][stateURI] = make(map[types.ID]uint64)
+			for txIDStr, whenSeen := range y {
 				txID, err := types.IDFromHex(txIDStr)
 				if err != nil {
 					s.Errorf("while unmarshaling tx ID: %v", err)
 					continue
 				}
-				txsSeenByPeers[deviceSpecificID][stateURI][txID] = seen
+				txsSeenByPeers[deviceSpecificID][stateURI][txID] = whenSeen
 			}
 		}
+	}
+
+	var subscribedStateURIs []string
+	for stateURI := range codec.SubscribedStateURIs {
+		subscribedStateURIs = append(subscribedStateURIs, stateURI)
 	}
 
 	s.dataMu.Lock()
 	defer s.dataMu.Unlock()
 	s.data = storeData{
-		SubscribedStateURIs:     utils.NewStringSet(codec.SubscribedStateURIs),
+		SubscribedStateURIs:     utils.NewStringSet(subscribedStateURIs),
 		MaxPeersPerSubscription: codec.MaxPeersPerSubscription,
 		TxsSeenByPeers:          txsSeenByPeers,
 	}
 	return nil
 }
 
-func (s *store) saveData() error {
-	txsSeenByPeers := make(map[string]map[string]map[string]bool)
-	for deviceSpecificID, y := range s.data.TxsSeenByPeers {
-		txsSeenByPeers[deviceSpecificID] = make(map[string]map[string]bool)
-		for stateURI, z := range y {
-			txsSeenByPeers[deviceSpecificID][stateURI] = make(map[string]bool)
-			for txID, seen := range z {
-				txsSeenByPeers[deviceSpecificID][stateURI][txID.Hex()] = seen
-			}
-		}
-	}
+// func (s *store) saveData() error {
+// 	txsSeenByPeers := make(map[string]map[string]map[string]uint64)
+// 	for deviceSpecificID, y := range s.data.TxsSeenByPeers {
+// 		txsSeenByPeers[deviceSpecificID] = make(map[string]map[string]uint64)
+// 		for stateURI, z := range y {
+// 			txsSeenByPeers[deviceSpecificID][stateURI] = make(map[string]uint64)
+// 			for txID, whenSeen := range z {
+// 				txsSeenByPeers[deviceSpecificID][stateURI][txID.Hex()] = whenSeen
+// 			}
+// 		}
+// 	}
 
-	codec := storeDataCodec{
-		SubscribedStateURIs:     s.data.SubscribedStateURIs.Slice(),
-		MaxPeersPerSubscription: s.data.MaxPeersPerSubscription,
-		TxsSeenByPeers:          txsSeenByPeers,
-	}
+// 	codec := storeDataCodec{
+// 		SubscribedStateURIs:     s.data.SubscribedStateURIs.Slice(),
+// 		MaxPeersPerSubscription: s.data.MaxPeersPerSubscription,
+// 		TxsSeenByPeers:          txsSeenByPeers,
+// 	}
 
-	node := s.db.State(true)
-	defer node.Close()
+// 	node := s.db.State(true)
+// 	defer node.Close()
 
-	err := node.Set(state.Keypath("prototree"), nil, codec)
-	if err != nil {
-		return err
-	}
-	return node.Save()
-}
+// 	err := node.Set(state.Keypath("prototree"), nil, codec)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	return node.Save()
+// }
 
 func (s *store) SubscribedStateURIs() utils.StringSet {
 	s.dataMu.RLock()
@@ -141,7 +174,15 @@ func (s *store) AddSubscribedStateURI(stateURI string) error {
 	defer s.dataMu.Unlock()
 
 	s.data.SubscribedStateURIs.Add(stateURI)
-	return s.saveData()
+
+	node := s.db.State(true)
+	defer node.Close()
+
+	err := node.Set(s.keypathForSubscribedStateURI(stateURI), nil, true)
+	if err != nil {
+		return err
+	}
+	return node.Save()
 }
 
 func (s *store) RemoveSubscribedStateURI(stateURI string) error {
@@ -149,7 +190,19 @@ func (s *store) RemoveSubscribedStateURI(stateURI string) error {
 	defer s.dataMu.Unlock()
 
 	s.data.SubscribedStateURIs.Remove(stateURI)
-	return s.saveData()
+
+	node := s.db.State(true)
+	defer node.Close()
+
+	err := node.Delete(s.keypathForSubscribedStateURI(stateURI), nil)
+	if err != nil {
+		return err
+	}
+	return node.Save()
+}
+
+func (s *store) keypathForSubscribedStateURI(stateURI string) state.Keypath {
+	return storeRootKeypath.Pushs("subscribedStateURIs").Pushs(stateURI)
 }
 
 func (s *store) OnNewSubscribedStateURI(handler func(stateURI string)) (unsubscribe func()) {
@@ -175,8 +228,21 @@ func (s *store) MaxPeersPerSubscription() uint64 {
 func (s *store) SetMaxPeersPerSubscription(max uint64) error {
 	s.dataMu.Lock()
 	defer s.dataMu.Unlock()
+
 	s.data.MaxPeersPerSubscription = max
-	return s.saveData()
+
+	node := s.db.State(true)
+	defer node.Close()
+
+	err := node.Set(s.keypathForMaxPeersPerSubscription(), nil, max)
+	if err != nil {
+		return err
+	}
+	return node.Save()
+}
+
+func (s *store) keypathForMaxPeersPerSubscription() state.Keypath {
+	return storeRootKeypath.Pushs("maxPeersPerSubscription")
 }
 
 func (s *store) TxSeenByPeer(deviceSpecificID, stateURI string, txID types.ID) bool {
@@ -193,7 +259,8 @@ func (s *store) TxSeenByPeer(deviceSpecificID, stateURI string, txID types.ID) b
 	if _, exists := s.data.TxsSeenByPeers[deviceSpecificID][stateURI]; !exists {
 		return false
 	}
-	return s.data.TxsSeenByPeers[deviceSpecificID][stateURI][txID]
+	_, exists := s.data.TxsSeenByPeers[deviceSpecificID][stateURI][txID]
+	return exists
 }
 
 func (s *store) MarkTxSeenByPeer(deviceSpecificID, stateURI string, txID types.ID) error {
@@ -204,13 +271,81 @@ func (s *store) MarkTxSeenByPeer(deviceSpecificID, stateURI string, txID types.I
 	s.dataMu.Lock()
 	defer s.dataMu.Unlock()
 
+	now := uint64(time.Now().UTC().Unix())
+
 	if _, exists := s.data.TxsSeenByPeers[deviceSpecificID]; !exists {
-		s.data.TxsSeenByPeers[deviceSpecificID] = make(map[string]map[types.ID]bool)
+		s.data.TxsSeenByPeers[deviceSpecificID] = make(map[string]map[types.ID]uint64)
 	}
 	if _, exists := s.data.TxsSeenByPeers[deviceSpecificID][stateURI]; !exists {
-		s.data.TxsSeenByPeers[deviceSpecificID][stateURI] = make(map[types.ID]bool)
+		s.data.TxsSeenByPeers[deviceSpecificID][stateURI] = make(map[types.ID]uint64)
 	}
-	s.data.TxsSeenByPeers[deviceSpecificID][stateURI][txID] = true
+	s.data.TxsSeenByPeers[deviceSpecificID][stateURI][txID] = now
 
-	return s.saveData()
+	node := s.db.State(true)
+	defer node.Close()
+
+	err := node.Set(s.keypathForTxSeenByPeer(deviceSpecificID, stateURI, txID), nil, now)
+	if err != nil {
+		return err
+	}
+
+	return node.Save()
+}
+
+func (s *store) keypathForTxSeenByPeer(deviceSpecificID, stateURI string, txID types.ID) state.Keypath {
+	return storeRootKeypath.Pushs("txsSeenByPeers").Pushs(deviceSpecificID).Pushs(stateURI).Pushs(txID.Hex())
+}
+
+type pruneTxsTask struct {
+	process.PeriodicTask
+	log.Logger
+
+	interval time.Duration
+	store    Store
+}
+
+func NewPruneTxsTask(
+	interval time.Duration,
+	store Store,
+) *pruneTxsTask {
+	t := &pruneTxsTask{
+		Logger: log.NewLogger("prototree store"),
+		store:  store,
+	}
+	t.PeriodicTask = *process.NewPeriodicTask("PruneTxsTask", interval, t.pruneTxs)
+	return t
+}
+
+func (t *pruneTxsTask) pruneTxs(ctx context.Context) {
+	err := t.store.PruneTxSeenRecordsOlderThan(t.interval)
+	if err != nil {
+		t.Errorf("while pruning prototree store txs: %v", err)
+	}
+}
+
+func (s *store) PruneTxSeenRecordsOlderThan(threshold time.Duration) error {
+	s.dataMu.Lock()
+	defer s.dataMu.Unlock()
+
+	node := s.db.State(true)
+	defer node.Close()
+
+	s.Debugf("pruning prototree store txs")
+
+	for deviceSpecificID, y := range s.data.TxsSeenByPeers {
+		for stateURI, z := range y {
+			for txID, whenSeen := range z {
+				t := time.Unix(int64(whenSeen), 0)
+				if t.Add(threshold).Before(time.Now().UTC()) {
+					delete(s.data.TxsSeenByPeers[deviceSpecificID][stateURI], txID)
+
+					err := node.Delete(s.keypathForTxSeenByPeer(deviceSpecificID, stateURI, txID), nil)
+					if err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+	return node.Save()
 }

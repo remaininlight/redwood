@@ -27,6 +27,7 @@ import (
 	"redwood.dev/swarm/libp2p"
 	"redwood.dev/swarm/protoauth"
 	"redwood.dev/swarm/protoblob"
+	"redwood.dev/swarm/protohush"
 	"redwood.dev/swarm/prototree"
 	"redwood.dev/tree"
 	"redwood.dev/utils"
@@ -46,13 +47,15 @@ type App struct {
 	BlobStore           blob.Store
 	AuthProto           protoauth.AuthProtocol
 	BlobProto           protoblob.BlobProtocol
+	HushProto           protohush.HushProtocol
+	HushProtoStore      protohush.Store
 	TreeProto           prototree.TreeProtocol
 	TreeProtoStore      prototree.Store
 	HTTPTransport       braidhttp.Transport
 	Libp2pTransport     libp2p.Transport
 	HTTPRPCServer       *http.Server
 	HTTPRPCServerConfig rpc.HTTPConfig
-	SharedBadgerDB      *state.DBTree
+	SharedStateDB       *state.DBTree
 }
 
 func NewApp(name string, config Config) *App {
@@ -112,6 +115,7 @@ func (app *App) Start() error {
 		app.KeyStore = identity.NewBadgerKeyStore(cfg.KeyStoreRoot(), scryptParams)
 		err = app.KeyStore.Unlock(cfg.KeyStore.Password, cfg.KeyStore.Mnemonic)
 		if err != nil {
+			app.Errorf("while unlocking keystore: %+v", err)
 			return err
 		}
 		defer closeIfError(&err, app.KeyStore)
@@ -124,16 +128,18 @@ func (app *App) Start() error {
 
 	db, err := state.NewDBTree(filepath.Join(cfg.DataRoot, "shared"), encryptionConfig)
 	if err != nil {
+		app.Errorf("while opening shared db: %+v", err)
 		return err
 	}
 	defer closeIfError(&err, db)
-	app.SharedBadgerDB = db
+	app.SharedStateDB = db
 
-	app.PeerStore = swarm.NewPeerStore(app.SharedBadgerDB)
+	app.PeerStore = swarm.NewPeerStore(app.SharedStateDB)
 
 	app.BlobStore = blob.NewBadgerStore(cfg.BlobDataRoot(), encryptionConfig)
 	err = app.BlobStore.Start()
 	if err != nil {
+		app.Errorf("while opening blob store: %+v", err)
 		return err
 	}
 
@@ -141,12 +147,14 @@ func (app *App) Start() error {
 		app.TxStore = tree.NewBadgerTxStore(cfg.TxDBRoot(), encryptionConfig)
 		err = app.TxStore.Start()
 		if err != nil {
+			app.Errorf("while opening tx store: %+v", err)
 			return err
 		}
 
 		app.ControllerHub = tree.NewControllerHub(cfg.StateDBRoot(), app.TxStore, app.BlobStore, encryptionConfig)
 		err = app.Process.SpawnChild(context.TODO(), app.ControllerHub)
 		if err != nil {
+			app.Errorf("while starting controller hub: %+v", err)
 			return err
 		}
 	}
@@ -175,6 +183,7 @@ func (app *App) Start() error {
 				app.PeerStore,
 			)
 			if err != nil {
+				app.Errorf("while creating libp2p transport: %+v", err)
 				return err
 			}
 			defer closeIfError(&err, libp2pTransport)
@@ -200,6 +209,7 @@ func (app *App) Start() error {
 				cfg.DevMode,
 			)
 			if err != nil {
+				app.Errorf("while creating braid-http transport: %+v", err)
 				return err
 			}
 			defer closeIfError(&err, httpTransport)
@@ -221,14 +231,22 @@ func (app *App) Start() error {
 		protocols = append(protocols, app.BlobProto)
 	}
 
+	if cfg.HushProtocol.Enabled {
+		app.HushProtoStore = protohush.NewStore(app.SharedStateDB)
+		app.HushProto = protohush.NewHushProtocol(transports, app.HushProtoStore, app.KeyStore, app.PeerStore)
+		protocols = append(protocols, app.HushProto)
+	}
+
 	if cfg.TreeProtocol.Enabled {
-		prototreeStore, err := prototree.NewStore(app.SharedBadgerDB)
+		prototreeStore, err := prototree.NewStore(app.SharedStateDB)
 		if err != nil {
+			app.Errorf("while opening prototree store: %+v", err)
 			return err
 		}
 
 		err = prototreeStore.SetMaxPeersPerSubscription(cfg.TreeProtocol.MaxPeersPerSubscription)
 		if err != nil {
+			app.Errorf("while setting max peers per subscription: %+v", err)
 			return err
 		}
 
@@ -247,6 +265,7 @@ func (app *App) Start() error {
 		app.Infof(0, "starting %v", transport.Name())
 		err = app.Process.SpawnChild(nil, transport)
 		if err != nil {
+			app.Errorf("while starting %v transport: %+v", transport.Name(), err)
 			return err
 		}
 	}
@@ -384,9 +403,9 @@ func (app *App) Close() error {
 		app.TxStore = nil
 	}
 
-	if app.SharedBadgerDB != nil {
-		app.SharedBadgerDB.Close()
-		app.SharedBadgerDB = nil
+	if app.SharedStateDB != nil {
+		app.SharedStateDB.Close()
+		app.SharedStateDB = nil
 	}
 
 	return app.Process.Close()

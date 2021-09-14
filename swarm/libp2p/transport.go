@@ -12,6 +12,7 @@ import (
 	badgerds "github.com/ipfs/go-ds-badger2"
 	dohp2p "github.com/libp2p/go-doh-resolver"
 	libp2p "github.com/libp2p/go-libp2p"
+	circuitp2p "github.com/libp2p/go-libp2p-circuit"
 	cryptop2p "github.com/libp2p/go-libp2p-core/crypto"
 	corehost "github.com/libp2p/go-libp2p-core/host"
 	metrics "github.com/libp2p/go-libp2p-core/metrics"
@@ -39,8 +40,10 @@ import (
 	"redwood.dev/log"
 	"redwood.dev/process"
 	"redwood.dev/swarm"
+	"redwood.dev/swarm/libp2p/pb"
 	"redwood.dev/swarm/protoauth"
 	"redwood.dev/swarm/protoblob"
+	"redwood.dev/swarm/protohush"
 	"redwood.dev/swarm/prototree"
 	"redwood.dev/tree"
 	"redwood.dev/types"
@@ -52,6 +55,7 @@ type Transport interface {
 	swarm.Transport
 	protoauth.AuthTransport
 	protoblob.BlobTransport
+	protohush.HushTransport
 	prototree.TreeTransport
 	Libp2pPeerID() string
 	ListenAddrs() []string
@@ -63,6 +67,7 @@ type transport struct {
 	log.Logger
 	protoauth.BaseAuthTransport
 	protoblob.BaseBlobTransport
+	protohush.BaseHushTransport
 	prototree.BaseTreeTransport
 
 	libp2pHost        p2phost.Host
@@ -77,8 +82,6 @@ type transport struct {
 	datastorePath     string
 	dohDNSResolverURL string
 	*metrics.BandwidthCounter
-
-	address types.Address
 
 	controllerHub tree.ControllerHub
 	peerStore     swarm.PeerStore
@@ -95,6 +98,7 @@ const (
 	PROTO_MAIN          protocol.ID = "/redwood/main/1.0.0"
 	PROTO_BLOB_MANIFEST protocol.ID = "/redwood/blob/manifest/1.0.0"
 	PROTO_BLOB_CHUNK    protocol.ID = "/redwood/blob/chunk/1.0.0"
+	PROTO_HUSH          protocol.ID = "/redwood/hush/1.0.0"
 	TransportName       string      = "libp2p"
 )
 
@@ -186,6 +190,7 @@ func (t *transport) Start() error {
 		libp2p.EnableNATService(),
 		libp2p.ForceReachabilityPrivate(),
 		libp2p.StaticRelays(staticRelays),
+		libp2p.EnableRelay(circuitp2p.OptActive, circuitp2p.OptHop),
 		libp2p.EnableAutoRelay(),
 		// libp2p.DefaultStaticRelays(),
 		libp2p.Peerstore(peerStore),
@@ -212,6 +217,7 @@ func (t *transport) Start() error {
 	t.libp2pHost.SetStreamHandler(PROTO_MAIN, t.handleIncomingStream)
 	t.libp2pHost.SetStreamHandler(PROTO_BLOB_MANIFEST, t.handleBlobManifestRequest)
 	t.libp2pHost.SetStreamHandler(PROTO_BLOB_CHUNK, t.handleBlobChunkRequest)
+	t.libp2pHost.SetStreamHandler(PROTO_HUSH, t.handleHushStream)
 	t.libp2pHost.Network().Notify(t) // Register for libp2p connect/disconnect notifications
 
 	err = t.dht.Bootstrap(t.Process.Ctx())
@@ -490,6 +496,46 @@ func (t *transport) handleBlobChunkRequest(stream netp2p.Stream) {
 		return
 	}
 	t.HandleBlobChunkRequest(chunkSHA3, peerConn)
+}
+
+func (t *transport) handleHushStream(stream netp2p.Stream) {
+	peerConn := t.makeConnectedPeerConn(stream)
+	defer peerConn.Close()
+
+	protoBytes, err := peerConn.readProtobufBytes()
+	if err != nil {
+		t.Errorf("while reading incoming hush stream: %v", err)
+		return
+	}
+
+	var p pb.HushMessage
+	err = p.Unmarshal(protoBytes)
+	if err != nil {
+		t.Errorf("while reading incoming hush stream: %v", err)
+		return
+	}
+
+	ctx := context.TODO()
+
+	if msg := p.GetDhPubkeyAttestations(); msg != nil {
+		var attestations []protohush.DHPubkeyAttestation
+		for _, ptr := range msg.Attestations {
+			attestations = append(attestations, *ptr)
+		}
+		t.HandleIncomingDHPubkeyAttestations(ctx, attestations, peerConn)
+
+	} else if msg := p.GetProposeIndividualSession(); msg != nil {
+		t.HandleIncomingIndividualSessionProposal(ctx, msg.EncryptedProposal, peerConn)
+
+	} else if msg := p.GetApproveIndividualSession(); msg != nil {
+		t.HandleIncomingIndividualSessionApproval(ctx, *msg.Approval, peerConn)
+
+	} else if msg := p.GetSendIndividualMessage(); msg != nil {
+		t.HandleIncomingIndividualMessage(ctx, *msg.Message, peerConn)
+
+	} else {
+		t.Errorf("while reading incoming hush stream: got unknown message")
+	}
 }
 
 func (t *transport) handleIncomingStream(stream netp2p.Stream) {
@@ -772,7 +818,6 @@ func (t *transport) AnnounceBlob(ctx context.Context, refID blob.ID) error {
 		t.Errorf(`announce: could not dht.Provide ref "%v": %v`, refID.String(), err)
 		return err
 	}
-
 	return nil
 }
 

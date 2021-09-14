@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"reflect"
 	"strings"
@@ -263,9 +265,13 @@ func (tx *DBNode) NumSubkeys() uint64 {
 }
 
 func (n *DBNode) NodeInfo(keypath Keypath) (NodeType, ValueType, uint64, error) {
-	item, err := n.tx.Get(n.addKeyPrefix(n.rootKeypath.Push(keypath)))
+	return n.nodeInfo(n.rootKeypath.Push(keypath))
+}
+
+func (n *DBNode) nodeInfo(absKeypath Keypath) (NodeType, ValueType, uint64, error) {
+	item, err := n.tx.Get(n.addKeyPrefix(absKeypath))
 	if err == badger.ErrKeyNotFound {
-		return 0, 0, 0, errors.Wrap(types.Err404, n.addKeyPrefix(n.rootKeypath.Push(keypath)).String())
+		return 0, 0, 0, errors.Wrap(types.Err404, n.addKeyPrefix(absKeypath).String())
 	} else if err != nil {
 		return 0, 0, 0, errors.WithStack(err)
 	}
@@ -283,8 +289,12 @@ func (n *DBNode) NodeInfo(keypath Keypath) (NodeType, ValueType, uint64, error) 
 	return nodeType, valueType, length, nil
 }
 
-func (n *DBNode) Exists(keypath Keypath) (bool, error) {
-	_, err := n.tx.Get(n.addKeyPrefix(n.rootKeypath.Push(keypath)))
+func (n *DBNode) Exists(relKeypath Keypath) (bool, error) {
+	return n.exists(n.rootKeypath.Push(relKeypath))
+}
+
+func (n *DBNode) exists(absKeypath Keypath) (bool, error) {
+	_, err := n.tx.Get(n.addKeyPrefix(absKeypath))
 	if err == badger.ErrKeyNotFound {
 		return false, nil
 	} else if err != nil {
@@ -305,9 +315,7 @@ func (tx *DBNode) Value(relKeypath Keypath, rng *Range) (_ interface{}, _ bool, 
 		return nil, false, ErrInvalidRange
 	}
 
-	rootKeypath := tx.addKeyPrefix(tx.rootKeypath.Push(relKeypath))
-
-	item, err := tx.tx.Get(rootKeypath)
+	item, err := tx.tx.Get(tx.addKeyPrefix(tx.rootKeypath.Push(relKeypath)))
 	if err != nil {
 		if err == badger.ErrKeyNotFound {
 			return nil, false, nil
@@ -357,13 +365,14 @@ func (tx *DBNode) Value(relKeypath Keypath, rng *Range) (_ interface{}, _ bool, 
 	}
 
 	var valueBuf []byte
-	err = tx.scanChildrenForward(rootNodeType, relKeypath, rng, length, true, func(absKeypath Keypath, item *badger.Item) error {
-		relKeypath := absKeypath.RelativeTo(rootKeypath)
+	absKeypath := tx.Keypath().Push(relKeypath)
+	err = tx.scanChildrenForward(rootNodeType, absKeypath, rng, length, true, func(absChildKeypath Keypath, item *badger.Item) error {
+		relKeypath := absChildKeypath.RelativeTo(absKeypath)
 
 		// If we're ranging over a slice, transpose its indices to start from 0.
 		if rootNodeType == NodeTypeSlice && rng != nil {
-			newAbsKeypath := renumberSliceIndexKeypath(rootKeypath, absKeypath, -int64(startIdx))
-			relKeypath = newAbsKeypath.RelativeTo(rootKeypath)
+			newAbsKeypath := renumberSliceIndexKeypath(absKeypath, absChildKeypath, -int64(startIdx))
+			relKeypath = newAbsKeypath.RelativeTo(absKeypath)
 		}
 
 		// Decode the value from the DB into a Go value
@@ -554,6 +563,13 @@ func makeScanError(node *DBNode, dest interface{}) error {
 }
 
 func (node *DBNode) Scan(into interface{}) error {
+	// exists, err := node.Exists(nil)
+	// if err != nil {
+	// 	return err
+	// } else if !exists {
+	// 	return types.Err404
+	// }
+
 	switch dest := into.(type) {
 	case *string:
 		x, is, err := node.StringValue(nil)
@@ -593,6 +609,19 @@ func (node *DBNode) Scan(into interface{}) error {
 			return makeScanError(node, dest)
 		}
 		*dest = x
+		return nil
+
+	case *uint32:
+		x, is, err := node.UintValue(nil)
+		if err != nil {
+			return err
+		} else if !is {
+			return makeScanError(node, dest)
+		}
+		if x > math.MaxUint32 {
+			return errors.Wrap(makeScanError(node, dest), "overflows uint32")
+		}
+		*dest = uint32(x)
 		return nil
 
 	case *int64:
@@ -1032,13 +1061,49 @@ func (tx *DBNode) setRangeSlice(absKeypath Keypath, rng *Range, encodedVal []byt
 }
 
 func (tx *DBNode) setNoRange(absKeypath Keypath, value interface{}) error {
-	err := tx.Delete(absKeypath.RelativeTo(tx.rootKeypath), nil)
+	err := tx.delete(absKeypath, nil)
 	if err != nil {
 		return err
 	}
 
-	// Set value types for intermediate keypaths in case they don't exist
 	numParts := absKeypath.NumParts()
+
+	// When setting a value in a map, we need to check to see if the key is new,
+	// and if so, increment the map's length by 1
+	if numParts > 0 {
+		absParentKeypath, _ := absKeypath.Pop()
+
+		exists, err := tx.exists(absParentKeypath)
+		if err != nil {
+			return err
+		}
+
+		if exists {
+			nodeType, _, parentLength, err := tx.nodeInfo(absParentKeypath)
+			if err != nil {
+				return err
+			}
+			if nodeType == NodeTypeMap {
+				exists, err := tx.exists(absKeypath)
+				if err != nil {
+					return err
+				}
+				if !exists {
+					encoded, err := encodeNode(NodeTypeMap, ValueTypeInvalid, parentLength+1, nil)
+					if err != nil {
+						return err
+					}
+
+					err = tx.tx.Set(tx.addKeyPrefix(absParentKeypath), encoded)
+					if err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+
+	// Set value types for intermediate keypaths in case they don't exist
 	for i := 0; i < numParts; i++ {
 		partialKeypath := tx.addKeyPrefix(absKeypath.FirstNParts(i))
 
@@ -1179,7 +1244,11 @@ func (tx *DBNode) setNode(absKeypath Keypath, node Node) error {
 }
 
 func (tx *DBNode) Delete(relKeypath Keypath, rng *Range) (err error) {
-	defer utils.Annotate(&err, "DBNode#Delete(%v, %v)", relKeypath, rng)
+	return tx.delete(tx.rootKeypath.Push(relKeypath), rng)
+}
+
+func (tx *DBNode) delete(absKeypath Keypath, rng *Range) (err error) {
+	defer utils.Annotate(&err, "DBNode#Delete(%v, %v)", absKeypath, rng)
 
 	if rng == nil {
 		rng = tx.rng
@@ -1190,9 +1259,7 @@ func (tx *DBNode) Delete(relKeypath Keypath, rng *Range) (err error) {
 		return ErrInvalidRange
 	}
 
-	rootKeypath := tx.addKeyPrefix(tx.rootKeypath.Push(relKeypath))
-
-	item, err := tx.tx.Get(rootKeypath)
+	item, err := tx.tx.Get(tx.addKeyPrefix(absKeypath))
 	if err != nil && err == badger.ErrKeyNotFound {
 		return nil
 	} else if err != nil {
@@ -1210,112 +1277,132 @@ func (tx *DBNode) Delete(relKeypath Keypath, rng *Range) (err error) {
 	}
 
 	// If it's a simple NodeTypeValue, handle it without iteration
-	if rootNodeType == NodeTypeValue {
-		if rng != nil {
-			if valueType != ValueTypeString && valueType != ValueTypeBytes {
-				return errors.Wrapf(ErrRangeOverNonSlice, "(keypath: %v, %v, %v)", rootKeypath, rootNodeType, valueType)
-			} else if !rng.ValidForLength(length) {
-				return ErrInvalidRange
-			}
+	if rootNodeType == NodeTypeValue && rng != nil {
+		return tx.deleteRangeOfValue(absKeypath, rng, rootNodeType, valueType, length, data)
+	}
 
-			v, err := decodeGoValue(rootNodeType, valueType, length, nil, data)
+	// Convert non-range deletes into range deletes to reduce code
+	if rng == nil {
+		absParentKeypath, keypathToDelete := absKeypath.Pop()
+		parentNodeType, _, _, err := tx.nodeInfo(absParentKeypath)
+		if err != nil {
+			return err
+		}
+
+		if parentNodeType == NodeTypeMap {
+			idx, err := tx.indexOfMapSubkey(absParentKeypath, keypathToDelete)
 			if err != nil {
 				return err
 			}
+			rng = &Range{int64(idx), int64(idx) + 1}
 
-			startIdx, endIdx := rng.IndicesForLength(length)
-
-			if valueType == ValueTypeString {
-				s := v.(string)
-				s = s[:startIdx] + s[endIdx:]
-
-				// @@TODO: add a "modified" field to the diff?
-				// tx.diff.Remove(tx.rmKeyPrefix(rootKeypath))
-				return tx.Set(rootKeypath, nil, s)
-			} else {
-				s := v.([]byte)
-				s = append(s[:startIdx], s[endIdx:]...)
-
-				// @@TODO: add a "modified" field to the diff?
-				// tx.diff.Remove(tx.rmKeyPrefix(rootKeypath))
-				return tx.Set(rootKeypath, nil, s)
-			}
+		} else if parentNodeType == NodeTypeSlice {
+			idx := int64(DecodeSliceIndex(keypathToDelete))
+			rng = &Range{idx, idx + 1}
 		}
-
-		tx.diff.Remove(tx.rmKeyPrefix(rootKeypath))
-		return tx.tx.Delete(rootKeypath)
+		return tx.delete(absParentKeypath, rng)
 	}
 
 	// Delete child nodes
 	{
-		tx.scanChildrenForward(rootNodeType, relKeypath, rng, length, false, func(absKeypath Keypath, item *badger.Item) error {
+		tx.scanChildrenForward(rootNodeType, absKeypath, rng, length, false, func(absChildKeypath Keypath, item *badger.Item) error {
 			// This .Copy() is necessary.  See https://github.com/dgraph-io/badger/issues/494
-			err := tx.tx.Delete(absKeypath.Copy())
+			err := tx.tx.Delete(tx.addKeyPrefix(absChildKeypath.Copy()))
 			if err != nil {
-				return errors.Wrapf(err, "can't delete keypath %v", absKeypath)
+				return errors.Wrapf(err, "can't delete keypath %v", absChildKeypath)
 			}
-			tx.diff.Remove(tx.rmKeyPrefix(absKeypath))
+			tx.diff.Remove(absChildKeypath)
 			return nil
 		})
 	}
 
-	if rng == nil {
-		// Remove the root element if there's no range.  This must happen after we .scanChildrenForward
-		err := tx.tx.Delete(rootKeypath)
+	err = tx.tx.Delete(tx.addKeyPrefix(absKeypath))
+	if err != nil {
+		return err
+	}
+	tx.diff.Remove(absKeypath)
+
+	_, endIdx := rng.IndicesForLength(length)
+
+	// Re-number the trailing entries if the root node is a slice
+	if rootNodeType == NodeTypeSlice && endIdx < length {
+		renumberRange := &Range{int64(endIdx), int64(length)}
+		delta := -int64(rng.Size())
+
+		err := tx.scanChildrenForward(NodeTypeSlice, absKeypath, renumberRange, length, true, func(absChildKeypath Keypath, item *badger.Item) error {
+			valueBuf, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+
+			newAbsChildKeypath := renumberSliceIndexKeypath(absKeypath, absChildKeypath, delta)
+
+			err = tx.tx.Set(tx.addKeyPrefix(newAbsChildKeypath), valueBuf)
+			if err != nil {
+				return errors.Wrapf(err, "can't set keypath %v", newAbsChildKeypath)
+			}
+			// This .Copy() is necessary.  See https://github.com/dgraph-io/badger/issues/494
+			err = tx.tx.Delete(tx.addKeyPrefix(absChildKeypath.Copy()))
+			if err != nil {
+				return errors.Wrapf(err, "can't delete keypath %v", absChildKeypath)
+			}
+			return nil
+		})
 		if err != nil {
 			return err
 		}
-		tx.diff.Remove(tx.rmKeyPrefix(rootKeypath))
+	}
 
-	} else {
-		_, endIdx := rng.IndicesForLength(length)
-
-		// Re-number the trailing entries if the root node is a slice
-		if rootNodeType == NodeTypeSlice && endIdx < length {
-			renumberRange := &Range{int64(endIdx), int64(length)}
-			delta := -int64(rng.Size())
-
-			err := tx.scanChildrenForward(NodeTypeSlice, relKeypath, renumberRange, length, true, func(absKeypath Keypath, item *badger.Item) error {
-				valueBuf, err := item.ValueCopy(nil)
-				if err != nil {
-					return err
-				}
-
-				newAbsKeypath := renumberSliceIndexKeypath(rootKeypath, absKeypath, delta)
-
-				err = tx.tx.Set(newAbsKeypath, valueBuf)
-				if err != nil {
-					return errors.Wrapf(err, "can't set keypath %v", newAbsKeypath)
-				}
-				// This .Copy() is necessary.  See https://github.com/dgraph-io/badger/issues/494
-				err = tx.tx.Delete(absKeypath.Copy())
-				if err != nil {
-					return errors.Wrapf(err, "can't delete keypath %v", absKeypath)
-				}
-				return nil
-			})
-			if err != nil {
-				return err
-			}
+	// Set new length
+	if rng != nil && (rootNodeType == NodeTypeSlice || rootNodeType == NodeTypeMap) {
+		newLen := length - rng.Size()
+		encoded, err := encodeNode(rootNodeType, ValueTypeInvalid, newLen, nil)
+		if err != nil {
+			return err
 		}
-
-		// Set new length
-		if rootNodeType == NodeTypeSlice || rootNodeType == NodeTypeMap {
-			newLen := length - rng.Size()
-			encoded, err := encodeNode(rootNodeType, ValueTypeInvalid, newLen, nil)
-			if err != nil {
-				return err
-			}
-			err = tx.tx.Set(rootKeypath, encoded)
-			if err != nil {
-				return err
-			}
+		err = tx.tx.Set(tx.addKeyPrefix(absKeypath), encoded)
+		if err != nil {
+			return err
 		}
 	}
 
 	// @@TODO: make sure that everywhere we're putting things into the Diff, we use tx.rmKeyPrefix(...)
 
 	return nil
+}
+
+func (tx *DBNode) deleteRangeOfValue(absKeypath Keypath, rng *Range, rootNodeType NodeType, valueType ValueType, length uint64, data []byte) error {
+	if valueType != ValueTypeString && valueType != ValueTypeBytes {
+		return errors.Wrapf(ErrRangeOverNonSlice, "(keypath: %v, %v, %v)", tx.addKeyPrefix(absKeypath), rootNodeType, valueType)
+	} else if !rng.ValidForLength(length) {
+		return ErrInvalidRange
+	}
+
+	v, err := decodeGoValue(rootNodeType, valueType, length, nil, data)
+	if err != nil {
+		return err
+	}
+
+	startIdx, endIdx := rng.IndicesForLength(length)
+
+	if valueType == ValueTypeString {
+		s := v.(string)
+		s = s[:startIdx] + s[endIdx:]
+
+		// @@TODO: add a "modified" field to the diff?
+		// tx.diff.Remove(tx.rmKeyPrefix(absKeypath))
+		return tx.Set(absKeypath, nil, s)
+	} else {
+		s := v.([]byte)
+		s = append(s[:startIdx], s[endIdx:]...)
+
+		// @@TODO: add a "modified" field to the diff?
+		// tx.diff.Remove(tx.rmKeyPrefix(absKeypath))
+		return tx.Set(absKeypath, nil, s)
+	}
+
+	// tx.diff.Remove(tx.rmKeyPrefix(absKeypath))
+	// return tx.tx.Delete(absKeypath)
 }
 
 func (tx *DBNode) Diff() *Diff {
@@ -1327,7 +1414,12 @@ func (tx *DBNode) ResetDiff() {
 }
 
 func (tx *DBNode) CopyToMemory(relKeypath Keypath, rng *Range) (n Node, err error) {
-	defer utils.Annotate(&err, "CopyToMemory (relKeypath: %v, range: %v)", relKeypath, rng)
+	absKeypath := tx.rootKeypath.Push(relKeypath)
+	return tx.copyToMemory(absKeypath, rng)
+}
+
+func (tx *DBNode) copyToMemory(absKeypath Keypath, rng *Range) (n Node, err error) {
+	defer utils.Annotate(&err, "CopyToMemory (absKeypath: %v, range: %v)", absKeypath, rng)
 
 	if rng == nil {
 		rng = tx.rng
@@ -1338,9 +1430,7 @@ func (tx *DBNode) CopyToMemory(relKeypath Keypath, rng *Range) (n Node, err erro
 		return nil, ErrInvalidRange
 	}
 
-	rootKeypath := tx.addKeyPrefix(tx.rootKeypath.Push(relKeypath))
-
-	item, err := tx.tx.Get(rootKeypath)
+	item, err := tx.tx.Get(tx.addKeyPrefix(absKeypath))
 	if errors.Cause(err) == badger.ErrKeyNotFound {
 		return nil, types.Err404
 	} else if err != nil {
@@ -1400,12 +1490,12 @@ func (tx *DBNode) CopyToMemory(relKeypath Keypath, rng *Range) (n Node, err erro
 	var newKeypaths []Keypath
 	var valBuf []byte
 
-	err = tx.scanChildrenForward(rootNodeType, relKeypath, rng, length, true, func(absKeypath Keypath, item *badger.Item) error {
-		relKeypath := absKeypath.RelativeTo(rootKeypath).Copy()
+	err = tx.scanChildrenForward(rootNodeType, absKeypath, rng, length, true, func(absChildKeypath Keypath, item *badger.Item) error {
+		relKeypath := absChildKeypath.RelativeTo(absKeypath).Copy()
 
 		// If we're ranging over a slice, transpose its indices so that they start from 0
 		if rootNodeType == NodeTypeSlice && rng != nil {
-			relKeypath = renumberSliceIndexKeypath(rootKeypath, absKeypath, -int64(startIdx))
+			relKeypath = renumberSliceIndexKeypath(absKeypath, absChildKeypath, -int64(startIdx))
 		}
 
 		err := item.Value(func(bs []byte) error {
@@ -1473,7 +1563,29 @@ func (tx *DBNode) DebugPrint(printFn func(inFormat string, args ...interface{}),
 			panic(err)
 		}
 
-		printFn(indent+"    %s: %v %v %v %v (%v / %v)", node.Keypath(), nodeType, valueType, length, val, valBytes, string(valBytes))
+		if nodeType == NodeTypeValue {
+			switch valueType {
+			case ValueTypeBytes:
+				printFn(indent+"    %s: (%v, length %v) %v", node.Keypath(), valueType, length, hex.EncodeToString(val.([]byte)))
+			case ValueTypeString:
+				printFn(indent+"    %s: (%v, length %v) %v", node.Keypath(), valueType, length, val)
+			case ValueTypeInt:
+				printFn(indent+"    %s: (%v) %v", node.Keypath(), valueType, val)
+			case ValueTypeUint:
+				printFn(indent+"    %s: (%v) %v", node.Keypath(), valueType, val)
+			case ValueTypeBool:
+				printFn(indent+"    %s: (%v) %v", node.Keypath(), valueType, val)
+			case ValueTypeFloat:
+				printFn(indent+"    %s: (%v) %v", node.Keypath(), valueType, val)
+			case ValueTypeNil:
+				printFn(indent+"    %s: (%v)", node.Keypath(), valueType)
+			case ValueTypeInvalid:
+				printFn(indent+"    %s: (%v)", node.Keypath(), valueType)
+			}
+		} else {
+			printFn(indent+"    %s: (%v, length %v)", node.Keypath(), nodeType, length)
+		}
+
 	}
 	printFn(indent + "}")
 }
@@ -1551,10 +1663,15 @@ func (t *DBTree) DebugPrint(keypathPrefix Keypath, rng *Range) ([]Keypath, []int
 	return keypaths, values, err
 }
 
-func (n *DBNode) Iterator(keypath Keypath, prefetchValues bool, prefetchSize int) Iterator {
+func (n *DBNode) Iterator(relKeypath Keypath, prefetchValues bool, prefetchSize int) Iterator {
+	absKeypath := n.Keypath().Push(relKeypath)
+	return n.iterator(absKeypath, prefetchValues, prefetchSize)
+}
+
+func (n *DBNode) iterator(absKeypath Keypath, prefetchValues bool, prefetchSize int) Iterator {
 	// Badger doesn't allow more than one iterator open inside of a RW transaction
 	if n.activeIterator.mutable && n.activeIterator.iter != nil {
-		return newReusableIterator(n.activeIterator.iter, keypath, n)
+		return newReusableIterator(n.activeIterator.iter, absKeypath, n)
 	}
 
 	opts := badger.DefaultIteratorOptions
@@ -1562,39 +1679,48 @@ func (n *DBNode) Iterator(keypath Keypath, prefetchValues bool, prefetchSize int
 	opts.PrefetchValues = prefetchValues
 	opts.PrefetchSize = prefetchSize
 	badgerIter := n.tx.NewIterator(opts)
-	iter := newIteratorFromBadgerIterator(badgerIter, keypath, n)
+	iter := newIteratorFromBadgerIterator(badgerIter, absKeypath, n)
 	n.activeIterator.iter = iter
 	return iter
 }
 
-func (n *DBNode) ChildIterator(keypath Keypath, prefetchValues bool, prefetchSize int) Iterator {
-	dbIter := n.Iterator(keypath, prefetchValues, prefetchSize)
+func (n *DBNode) ChildIterator(relKeypath Keypath, prefetchValues bool, prefetchSize int) Iterator {
+	absKeypath := n.Keypath().Push(relKeypath)
+	return n.childIterator(absKeypath, prefetchValues, prefetchSize)
+}
+
+func (n *DBNode) childIterator(absKeypath Keypath, prefetchValues bool, prefetchSize int) Iterator {
+	dbIter := n.iterator(absKeypath, prefetchValues, prefetchSize)
 	return &dbChildIterator{
-		Iterator:                dbIter,
-		strippedAbsKeypathParts: dbIter.RootKeypath().NumParts(),
+		Iterator:           dbIter,
+		numAbsKeypathParts: dbIter.RootKeypath().NumParts(),
 	}
 }
 
-func (n *DBNode) DepthFirstIterator(keypath Keypath, prefetchValues bool, prefetchSize int) Iterator {
+func (n *DBNode) DepthFirstIterator(relKeypath Keypath, prefetchValues bool, prefetchSize int) Iterator {
+	absKeypath := n.Keypath().Push(relKeypath)
+	return n.depthFirstIterator(absKeypath, prefetchValues, prefetchSize)
+}
+
+func (n *DBNode) depthFirstIterator(absKeypath Keypath, prefetchValues bool, prefetchSize int) Iterator {
 	opts := badger.DefaultIteratorOptions
 	opts.Reverse = true
 	opts.PrefetchValues = prefetchValues
 	opts.PrefetchSize = prefetchSize
 	iter := n.tx.NewIterator(opts)
 
-	rootKeypath := n.rootKeypath.Push(keypath)
-	scanPrefix := n.addKeyPrefix(rootKeypath)
+	scanPrefix := n.addKeyPrefix(absKeypath)
 	if len(scanPrefix) != len(n.keyPrefix) {
 		scanPrefix = append(scanPrefix, KeypathSeparator[0])
 	}
 
 	return &dbDepthFirstIterator{
-		iter:        iter,
-		rootKeypath: rootKeypath,
-		scanPrefix:  scanPrefix,
-		tx:          n.tx,
-		rootNode:    n,
-		iterNode:    &DBNode{tx: n.tx},
+		iter:           iter,
+		absRootKeypath: absKeypath,
+		scanPrefix:     scanPrefix,
+		tx:             n.tx,
+		rootNode:       n,
+		iterNode:       &DBNode{tx: n.tx},
 	}
 }
 
@@ -1687,18 +1813,17 @@ func (t *VersionedDBTree) BuildIndex(version *types.ID, node Node, indexName Key
 
 func (n *DBNode) scanChildrenForward(
 	rootNodeType NodeType,
-	relKeypath Keypath,
+	absParentKeypath Keypath,
 	rng *Range,
 	length uint64,
 	prefetchValues bool,
 	fn func(absKeypath Keypath, item *badger.Item) error,
 ) error {
-	var startKeypath Keypath
-	var endKeypath Keypath
-	var subkeyIdx uint64
+	var absStartKeypath Keypath
+	var absEndKeypath Keypath
 	var endIdx uint64
 
-	iter := n.Iterator(relKeypath, prefetchValues, 10)
+	iter := n.iterator(absParentKeypath, prefetchValues, 10)
 	defer iter.Close()
 
 	if rootNodeType == NodeTypeMap {
@@ -1710,10 +1835,9 @@ func (n *DBNode) scanChildrenForward(
 			}
 			var startIdx uint64
 			startIdx, endIdx = rng.IndicesForLength(length)
-			startKeypath = n.keypathOfNthSubkey(relKeypath, startIdx).RelativeTo(relKeypath)
-			subkeyIdx = startIdx
-
-			iter.SeekTo(startKeypath)
+			absStartKeypath = n.nthMapSubkey(absParentKeypath, startIdx)
+			absEndKeypath = n.nthMapSubkey(absParentKeypath, endIdx)
+			iter.seekTo(absStartKeypath)
 
 		} else {
 			iter.Rewind()
@@ -1728,10 +1852,9 @@ func (n *DBNode) scanChildrenForward(
 				return nil
 			}
 			startIdx, endIdx := rng.IndicesForLength(length)
-			startKeypath = relKeypath.PushIndex(startIdx)
-			endKeypath = relKeypath.PushIndex(endIdx)
-
-			iter.SeekTo(EncodeSliceIndex(startIdx))
+			absStartKeypath = absParentKeypath.PushIndex(startIdx)
+			absEndKeypath = absParentKeypath.PushIndex(endIdx)
+			iter.seekTo(absStartKeypath)
 
 		} else {
 			iter.Rewind()
@@ -1741,9 +1864,7 @@ func (n *DBNode) scanChildrenForward(
 		return errors.New("scanChildrenForward can only be called on a map or slice")
 	}
 
-	var prevKeypath Keypath
-	var shouldStop bool
-	for ; iter.Valid() && !shouldStop; iter.Next() {
+	for ; iter.Valid(); iter.Next() {
 		var item *badger.Item
 		switch i := iter.(type) {
 		case *dbIterator:
@@ -1753,30 +1874,16 @@ func (n *DBNode) scanChildrenForward(
 		default:
 			panic("this should never happen")
 		}
-		absKeypath := Keypath(item.Key())
+		node := iter.Node()
 
 		// If we have a range, we have to figure out when to stop iterating
 		if rng != nil {
-			if rootNodeType == NodeTypeSlice && n.rmKeyPrefix(absKeypath).Equals(endKeypath) {
+			if node.Keypath().Equals(absEndKeypath) {
 				break
-
-			} else if rootNodeType == NodeTypeMap {
-				// If we're ranging over a map, we check to see if we've reached the end of the range.
-				// Then, we check the first part of the relative keypath to see if it's different from
-				// the previous keypath.  If so, increment the subkey counter.
-				if prevKeypath != nil {
-					if !absKeypath.Part(0).Equals(prevKeypath.Part(0)) {
-						subkeyIdx++
-					}
-					if subkeyIdx == endIdx {
-						break
-					}
-				}
-				prevKeypath = absKeypath.Copy()
 			}
 		}
 
-		err := fn(absKeypath, item)
+		err := fn(node.Keypath(), item)
 		if err != nil {
 			return err
 		}
@@ -1784,24 +1891,63 @@ func (n *DBNode) scanChildrenForward(
 	return nil
 }
 
-// keypathOfNthSubkey finds the Nth direct subkey in a map.
-func (node *DBNode) keypathOfNthSubkey(keypathPrefix Keypath, n uint64) Keypath {
-	iter := node.ChildIterator(keypathPrefix, false, 0)
+// NthSubkey finds the Nth direct subkey in a map.
+func (node *DBNode) NthMapSubkey(relKeypathOfMap Keypath, n uint64) Keypath {
+	absKeypathOfMap := node.Keypath().Push(relKeypathOfMap)
+	return node.nthMapSubkey(absKeypathOfMap, n).RelativeTo(node.Keypath())
+}
+
+func (node *DBNode) nthMapSubkey(absKeypathOfMap Keypath, n uint64) Keypath {
+	iter := node.childIterator(absKeypathOfMap, false, 0)
+	defer iter.Close()
+
+	var idx uint64
+	for iter.Rewind(); iter.Valid(); iter.Next() {
+		child := iter.Node()
+		if child == nil {
+			return nil
+		}
+
+		if idx == n {
+			return child.Keypath()
+		}
+		idx++
+	}
+	return nil
+}
+
+func (node *DBNode) IndexOfMapSubkey(relKeypathOfMap Keypath, subkey Keypath) (uint64, error) {
+	absKeypathOfMap := node.Keypath().Push(relKeypathOfMap)
+	return node.indexOfMapSubkey(absKeypathOfMap, subkey)
+}
+
+func (node *DBNode) indexOfMapSubkey(absKeypathOfMap Keypath, subkey Keypath) (uint64, error) {
+	nodeType, _, _, err := node.nodeInfo(absKeypathOfMap)
+	if err != nil {
+		return 0, err
+	} else if nodeType != NodeTypeMap {
+		return 0, ErrWrongType
+	} else if len(subkey) == 0 {
+		return 0, ErrNilKeypath
+	}
+
+	iter := node.childIterator(absKeypathOfMap, false, 0)
 	defer iter.Close()
 
 	var idx uint64
 	for iter.Rewind(); iter.Valid(); iter.Next() {
 		node := iter.Node()
 		if node == nil {
-			return nil
+			break
 		}
 
-		if idx == n {
-			return node.Keypath()
+		_, relKeypath := node.Keypath().Pop()
+		if relKeypath.Equals(subkey) {
+			return idx, nil
 		}
 		idx++
 	}
-	return nil
+	return 0, types.Err404
 }
 
 func encodeNode(nodeType NodeType, valueType ValueType, length uint64, value interface{}) ([]byte, error) {

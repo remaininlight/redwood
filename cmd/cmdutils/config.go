@@ -28,6 +28,7 @@ type Config struct {
 
 	AuthProtocol AuthProtocolConfig `yaml:"AuthProtocol"`
 	BlobProtocol BlobProtocolConfig `yaml:"BlobProtocol"`
+	HushProtocol HushProtocolConfig `yaml:"HushProtocol"`
 	TreeProtocol TreeProtocolConfig `yaml:"TreeProtocol"`
 
 	HTTPRPC *rpc.HTTPConfig `yaml:"HTTPRPC"`
@@ -74,6 +75,10 @@ type BlobProtocolConfig struct {
 	Enabled bool `yaml:"Enabled"`
 }
 
+type HushProtocolConfig struct {
+	Enabled bool `yaml:"Enabled"`
+}
+
 type TreeProtocolConfig struct {
 	Enabled                 bool   `yaml:"Enabled"`
 	MaxPeersPerSubscription uint64 `yaml:"MaxPeersPerSubscription"`
@@ -100,6 +105,7 @@ func DefaultConfig(appName string) Config {
 			Prompt: ">",
 			Commands: []REPLCommand{
 				CmdMnemonic,
+				CmdAddress,
 				CmdLibp2pPeerID,
 				CmdSubscribe,
 				CmdStateURIs,
@@ -111,6 +117,8 @@ func DefaultConfig(appName string) Config {
 				CmdRemoveAllPeers,
 				CmdRemoveUnverifiedPeers,
 				CmdRemoveFailedPeers,
+				CmdHushSendIndividualMessage,
+				CmdHushStoreDebugPrint,
 			},
 		},
 		BootstrapPeers: []BootstrapPeer{},
@@ -130,6 +138,9 @@ func DefaultConfig(appName string) Config {
 			Enabled: true,
 		},
 		BlobProtocol: BlobProtocolConfig{
+			Enabled: true,
+		},
+		HushProtocol: HushProtocolConfig{
 			Enabled: true,
 		},
 		TreeProtocol: TreeProtocolConfig{

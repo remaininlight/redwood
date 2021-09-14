@@ -47,10 +47,6 @@ func (p *peerStore) FetchAllPeerDetails() ([]*peerDetails, error) {
 	return p.fetchAllPeerDetails()
 }
 
-func (p *peerStore) FetchPeerDetails(dialInfo PeerDialInfo) (*peerDetails, error) {
-	return p.fetchPeerDetails(dialInfo)
-}
-
 func (p *peerStore) SavePeerDetails(peerDetails *peerDetails) error {
 	return p.savePeerDetails(peerDetails)
 }

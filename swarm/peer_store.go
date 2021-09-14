@@ -1,6 +1,7 @@
 package swarm
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,7 @@ type PeerStore interface {
 	AddVerifiedCredentials(dialInfo PeerDialInfo, deviceUniqueID string, address types.Address, sigpubkey crypto.SigningPublicKey, encpubkey crypto.AsymEncPubkey) PeerDetails
 	RemovePeers(dialInfos []PeerDialInfo) error
 	UnverifiedPeers() []PeerDetails
+	VerifiedPeers() []PeerDetails
 	Peers() []PeerDetails
 	AllDialInfos() []PeerDialInfo
 	PeerWithDialInfo(dialInfo PeerDialInfo) PeerDetails
@@ -30,6 +32,8 @@ type PeerStore interface {
 	PeersServingStateURI(stateURI string) []PeerDetails
 	IsKnownPeer(dialInfo PeerDialInfo) bool
 	OnNewUnverifiedPeer(fn func(dialInfo PeerDialInfo))
+
+	DebugPrint()
 }
 
 type peerStore struct {
@@ -67,6 +71,7 @@ func NewPeerStore(state *state.DBTree) *peerStore {
 		peersWithDeviceUniqueID: make(map[string]map[PeerDialInfo]*peerDetails),
 		unverifiedPeers:         make(map[PeerDialInfo]struct{}),
 	}
+	s.Infof(0, "opening peer store")
 
 	pds, err := s.fetchAllPeerDetails()
 	if err != nil {
@@ -74,6 +79,13 @@ func NewPeerStore(state *state.DBTree) *peerStore {
 	} else {
 		for _, pd := range pds {
 			s.peers[pd.dialInfo] = pd
+
+			if len(pd.deviceUniqueID) > 0 {
+				if s.peersWithDeviceUniqueID[pd.deviceUniqueID] == nil {
+					s.peersWithDeviceUniqueID[pd.deviceUniqueID] = make(map[PeerDialInfo]*peerDetails)
+				}
+				s.peersWithDeviceUniqueID[pd.deviceUniqueID][pd.dialInfo] = pd
+			}
 
 			if len(pd.addresses) > 0 {
 				for addr := range pd.addresses {
@@ -133,30 +145,54 @@ func (s *peerStore) AddDialInfo(dialInfo PeerDialInfo, deviceUniqueID string) Pe
 	return pd
 }
 
-func (s *peerStore) ensurePeerDetails(dialInfo PeerDialInfo, deviceUniqueID string) (_ *peerDetails, knownPeer bool, needsSave bool) {
-	pd, exists := s.peers[dialInfo]
-	if !exists {
-		pd = newPeerDetails(s, dialInfo, deviceUniqueID)
-		if dialInfo.DialAddr != "" {
-			s.unverifiedPeers[dialInfo] = struct{}{}
-			s.peers[dialInfo] = pd
+func (s *peerStore) findPeerDetails(dialInfo PeerDialInfo, deviceUniqueID string) *peerDetails {
+	if deviceUniqueID != "" {
+		pds, exists := s.peersWithDeviceUniqueID[deviceUniqueID]
+		if exists {
+			pd, exists := pds[dialInfo]
+			if exists && pd != nil {
+				return pd
+			}
 		}
+	}
+	return s.peers[dialInfo]
+}
+
+func (s *peerStore) ensurePeerDetails(dialInfo PeerDialInfo, deviceUniqueID string) (pd *peerDetails, knownPeer bool, needsSave bool) {
+	pd = s.findPeerDetails(dialInfo, deviceUniqueID)
+	knownPeer = pd != nil
+
+	if pd == nil {
+		pd = newPeerDetails(s, dialInfo, deviceUniqueID)
 		needsSave = true
 	}
-
 	if deviceUniqueID != "" {
-		if pd.deviceUniqueID != deviceUniqueID {
-			needsSave = true
-		}
-
-		pd.deviceUniqueID = deviceUniqueID
-
 		if _, ok := s.peersWithDeviceUniqueID[deviceUniqueID]; !ok {
 			s.peersWithDeviceUniqueID[deviceUniqueID] = make(map[PeerDialInfo]*peerDetails)
 		}
 		s.peersWithDeviceUniqueID[deviceUniqueID][dialInfo] = pd
 	}
-	return pd, exists, needsSave
+
+	pd.dialInfo = dialInfo
+	pd.deviceUniqueID = deviceUniqueID
+
+	s.peers[dialInfo] = pd
+	if len(pd.addresses) == 0 {
+		s.unverifiedPeers[dialInfo] = struct{}{}
+	} else {
+		delete(s.unverifiedPeers, dialInfo)
+	}
+
+	// @@TODO: handle the case where a peer's deviceUniqueID has changed (cleared browser cache, wiped keystore, etc.)
+	// if pd.deviceUniqueID != deviceUniqueID {
+	// 	needsSave = true
+
+	// 	if x, ok := s.peersWithDeviceUniqueID[pd.deviceUniqueID]; ok {
+	// 		delete(x, dialInfo)
+	// 	}
+	// }
+
+	return
 }
 
 func (s *peerStore) AddVerifiedCredentials(
@@ -249,6 +285,16 @@ func (s *peerStore) UnverifiedPeers() []PeerDetails {
 		i++
 	}
 	return unverifiedPeers
+}
+
+func (s *peerStore) VerifiedPeers() []PeerDetails {
+	var pds []PeerDetails
+	for addr := range s.peersWithAddress {
+		for _, pd := range s.peersWithAddress[addr] {
+			pds = append(pds, pd)
+		}
+	}
+	return pds
 }
 
 func (s *peerStore) AllDialInfos() []PeerDialInfo {
@@ -365,21 +411,6 @@ func (s *peerStore) fetchAllPeerDetails() ([]*peerDetails, error) {
 	return decoded, nil
 }
 
-func (s *peerStore) fetchPeerDetails(dialInfo PeerDialInfo) (*peerDetails, error) {
-	node := s.state.State(false)
-	defer node.Close()
-
-	dialInfoHash := s.dialInfoHash(dialInfo)
-	peerKeypath := state.Keypath("peers").Pushs(dialInfoHash)
-
-	var pd peerDetailsCodec
-	err := node.NodeAt(peerKeypath, nil).Scan(&pd)
-	if err != nil {
-		return nil, errors.Wrap(err, "could not fetch peer details")
-	}
-	return s.peerDetailsCodecToPeerDetails(pd)
-}
-
 func (s *peerStore) peerDetailsCodecToPeerDetails(pd peerDetailsCodec) (*peerDetails, error) {
 	sigpubkeys := make(map[types.Address]crypto.SigningPublicKey, len(pd.Sigpubkeys))
 	encpubkeys := make(map[types.Address]crypto.AsymEncPubkey, len(pd.Encpubkeys))
@@ -461,6 +492,12 @@ func (s *peerStore) deletePeers(dialInfos []PeerDialInfo) error {
 		}
 	}
 	return node.Save()
+}
+
+func (s *peerStore) DebugPrint() {
+	node := s.state.State(false)
+	defer node.Close()
+	node.NodeAt(state.Keypath("peers"), nil).DebugPrint(func(msg string, args ...interface{}) { fmt.Printf(msg, args...) }, true, 0)
 }
 
 type PeerDetails interface {
@@ -577,7 +614,6 @@ func (p *peerDetails) UpdateConnStats(success bool) {
 		p.lastContact = now
 		p.failures = 0
 	} else {
-		p.lastContact = now
 		p.lastFailure = now
 		p.failures++
 		p.backoff.Next()

@@ -1,7 +1,9 @@
 package types
 
 import (
+	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"math/rand"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -124,6 +126,25 @@ func (a *Address) UnmarshalText(asHex []byte) error {
 	return nil
 }
 
+func (a Address) Marshal() ([]byte, error) { return a[:], nil }
+
+func (a *Address) MarshalTo(data []byte) (n int, err error) {
+	copy(data, (*a)[:])
+	return len(data), nil
+}
+
+func (a *Address) Unmarshal(data []byte) error {
+	*a = Address{}
+	copy((*a)[:], data)
+	return nil
+}
+
+func (a *Address) Size() int                       { return len(*a) }
+func (a Address) MarshalJSON() ([]byte, error)     { return json.Marshal(a) }
+func (a *Address) UnmarshalJSON(data []byte) error { return json.Unmarshal(data, a) }
+func (a Address) Compare(other Address) int        { return bytes.Compare(a[:], other[:]) }
+func (a Address) Equal(other Address) bool         { return bytes.Equal(a[:], other[:]) }
+
 func OverlappingAddresses(one, two []Address) []Address {
 	var overlap []Address
 	for _, a := range one {
@@ -237,6 +258,38 @@ func (h *Hash) UnmarshalText(text []byte) error {
 	return nil
 }
 
+func (h Hash) Marshal() ([]byte, error) { return h[:], nil }
+
+func (h *Hash) MarshalTo(data []byte) (n int, err error) {
+	copy(data, (*h)[:])
+	return len(data), nil
+}
+
+func (h *Hash) Unmarshal(data []byte) error {
+	*h = Hash{}
+	copy((*h)[:], data)
+	return nil
+}
+
+func (h *Hash) Size() int { return len(*h) }
+func (h Hash) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + h.Hex() + `"`), nil
+}
+func (h *Hash) UnmarshalJSON(data []byte) error {
+	if len(data) < 3 {
+		*h = Hash{}
+		return nil
+	}
+	bs, err := hex.DecodeString(string(data[1 : len(data)-1]))
+	if err != nil {
+		return err
+	}
+	*h, err = HashFromBytes(bs)
+	return err
+}
+func (h Hash) Compare(other Hash) int { return bytes.Compare(h[:], other[:]) }
+func (h Hash) Equal(other Hash) bool  { return bytes.Equal(h[:], other[:]) }
+
 type HashAlg int
 
 const (
@@ -264,4 +317,31 @@ func (alg HashAlg) String() string {
 	default:
 		return "ERR:(bad value for HashAlg)"
 	}
+}
+
+func randomBytes(length int) []byte {
+	bs := make([]byte, length)
+	rand.Read(bs)
+	return bs
+}
+
+type gogoprotobufTest interface {
+	Float32() float32
+	Float64() float64
+	Int63() int64
+	Int31() int32
+	Uint32() uint32
+	Intn(n int) int
+}
+
+func NewPopulatedHash(_ gogoprotobufTest) *Hash {
+	var h Hash
+	copy(h[:], randomBytes(32))
+	return &h
+}
+
+func NewPopulatedAddress(_ gogoprotobufTest) *Address {
+	var a Address
+	copy(a[:], randomBytes(20))
+	return &a
 }

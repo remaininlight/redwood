@@ -129,7 +129,7 @@ func run(configPath, passwordFile string, gui, dev bool, stateURIs []string) (er
 	go func() {
 		err = app.Start()
 		if err != nil {
-			panic(err)
+			panic(fmt.Sprintf("%+v", err))
 			// return err
 		}
 	}()

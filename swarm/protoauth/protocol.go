@@ -69,13 +69,16 @@ func (ap *authProtocol) Name() string {
 }
 
 func (ap *authProtocol) Start() error {
-	ap.Process.Start()
+	err := ap.Process.Start()
+	if err != nil {
+		return err
+	}
 
 	processPeersTask := NewProcessPeersTask(10*time.Second, ap, ap.peerStore, ap.transports)
 	ap.peerStore.OnNewUnverifiedPeer(func(dialInfo swarm.PeerDialInfo) {
 		processPeersTask.Enqueue()
 	})
-	err := ap.Process.SpawnChild(nil, processPeersTask)
+	err = ap.Process.SpawnChild(nil, processPeersTask)
 	if err != nil {
 		return err
 	}

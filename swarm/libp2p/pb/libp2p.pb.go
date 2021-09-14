@@ -6,11 +6,13 @@ package pb
 import (
 	bytes "bytes"
 	fmt "fmt"
+	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	io "io"
 	math "math"
 	math_bits "math/bits"
 	pb "redwood.dev/blob/pb"
+	pb1 "redwood.dev/swarm/protohush/pb"
 	reflect "reflect"
 	strings "strings"
 )
@@ -26,26 +28,26 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
-type Msg struct {
-	// Types that are valid to be assigned to Msg:
-	//	*Msg_FetchBlobManifest
-	//	*Msg_SendBlobManifest
-	//	*Msg_FetchBlobChunk
-	//	*Msg_SendBlobChunk
-	Msg isMsg_Msg `protobuf_oneof:"msg"`
+type BlobMessage struct {
+	// Types that are valid to be assigned to Payload:
+	//	*BlobMessage_FetchBlobManifest
+	//	*BlobMessage_SendBlobManifest
+	//	*BlobMessage_FetchBlobChunk
+	//	*BlobMessage_SendBlobChunk
+	Payload isBlobMessage_Payload `protobuf_oneof:"payload"`
 }
 
-func (m *Msg) Reset()      { *m = Msg{} }
-func (*Msg) ProtoMessage() {}
-func (*Msg) Descriptor() ([]byte, []int) {
+func (m *BlobMessage) Reset()      { *m = BlobMessage{} }
+func (*BlobMessage) ProtoMessage() {}
+func (*BlobMessage) Descriptor() ([]byte, []int) {
 	return fileDescriptor_cad2813fa2bf04bd, []int{0}
 }
-func (m *Msg) XXX_Unmarshal(b []byte) error {
+func (m *BlobMessage) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *Msg) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *BlobMessage) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_Msg.Marshal(b, m, deterministic)
+		return xxx_messageInfo_BlobMessage.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -55,85 +57,86 @@ func (m *Msg) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 		return b[:n], nil
 	}
 }
-func (m *Msg) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_Msg.Merge(m, src)
+func (m *BlobMessage) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_BlobMessage.Merge(m, src)
 }
-func (m *Msg) XXX_Size() int {
+func (m *BlobMessage) XXX_Size() int {
 	return m.Size()
 }
-func (m *Msg) XXX_DiscardUnknown() {
-	xxx_messageInfo_Msg.DiscardUnknown(m)
+func (m *BlobMessage) XXX_DiscardUnknown() {
+	xxx_messageInfo_BlobMessage.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_Msg proto.InternalMessageInfo
+var xxx_messageInfo_BlobMessage proto.InternalMessageInfo
 
-type isMsg_Msg interface {
-	isMsg_Msg()
+type isBlobMessage_Payload interface {
+	isBlobMessage_Payload()
 	Equal(interface{}) bool
+	VerboseEqual(interface{}) error
 	MarshalTo([]byte) (int, error)
 	Size() int
 }
 
-type Msg_FetchBlobManifest struct {
+type BlobMessage_FetchBlobManifest struct {
 	FetchBlobManifest *FetchBlobManifest `protobuf:"bytes,1,opt,name=fetchBlobManifest,proto3,oneof" json:"fetchBlobManifest,omitempty"`
 }
-type Msg_SendBlobManifest struct {
+type BlobMessage_SendBlobManifest struct {
 	SendBlobManifest *SendBlobManifest `protobuf:"bytes,2,opt,name=sendBlobManifest,proto3,oneof" json:"sendBlobManifest,omitempty"`
 }
-type Msg_FetchBlobChunk struct {
+type BlobMessage_FetchBlobChunk struct {
 	FetchBlobChunk *FetchBlobChunk `protobuf:"bytes,3,opt,name=fetchBlobChunk,proto3,oneof" json:"fetchBlobChunk,omitempty"`
 }
-type Msg_SendBlobChunk struct {
+type BlobMessage_SendBlobChunk struct {
 	SendBlobChunk *SendBlobChunk `protobuf:"bytes,4,opt,name=sendBlobChunk,proto3,oneof" json:"sendBlobChunk,omitempty"`
 }
 
-func (*Msg_FetchBlobManifest) isMsg_Msg() {}
-func (*Msg_SendBlobManifest) isMsg_Msg()  {}
-func (*Msg_FetchBlobChunk) isMsg_Msg()    {}
-func (*Msg_SendBlobChunk) isMsg_Msg()     {}
+func (*BlobMessage_FetchBlobManifest) isBlobMessage_Payload() {}
+func (*BlobMessage_SendBlobManifest) isBlobMessage_Payload()  {}
+func (*BlobMessage_FetchBlobChunk) isBlobMessage_Payload()    {}
+func (*BlobMessage_SendBlobChunk) isBlobMessage_Payload()     {}
 
-func (m *Msg) GetMsg() isMsg_Msg {
+func (m *BlobMessage) GetPayload() isBlobMessage_Payload {
 	if m != nil {
-		return m.Msg
+		return m.Payload
 	}
 	return nil
 }
 
-func (m *Msg) GetFetchBlobManifest() *FetchBlobManifest {
-	if x, ok := m.GetMsg().(*Msg_FetchBlobManifest); ok {
+func (m *BlobMessage) GetFetchBlobManifest() *FetchBlobManifest {
+	if x, ok := m.GetPayload().(*BlobMessage_FetchBlobManifest); ok {
 		return x.FetchBlobManifest
 	}
 	return nil
 }
 
-func (m *Msg) GetSendBlobManifest() *SendBlobManifest {
-	if x, ok := m.GetMsg().(*Msg_SendBlobManifest); ok {
+func (m *BlobMessage) GetSendBlobManifest() *SendBlobManifest {
+	if x, ok := m.GetPayload().(*BlobMessage_SendBlobManifest); ok {
 		return x.SendBlobManifest
 	}
 	return nil
 }
 
-func (m *Msg) GetFetchBlobChunk() *FetchBlobChunk {
-	if x, ok := m.GetMsg().(*Msg_FetchBlobChunk); ok {
+func (m *BlobMessage) GetFetchBlobChunk() *FetchBlobChunk {
+	if x, ok := m.GetPayload().(*BlobMessage_FetchBlobChunk); ok {
 		return x.FetchBlobChunk
 	}
 	return nil
 }
 
-func (m *Msg) GetSendBlobChunk() *SendBlobChunk {
-	if x, ok := m.GetMsg().(*Msg_SendBlobChunk); ok {
+func (m *BlobMessage) GetSendBlobChunk() *SendBlobChunk {
+	if x, ok := m.GetPayload().(*BlobMessage_SendBlobChunk); ok {
 		return x.SendBlobChunk
 	}
 	return nil
 }
 
 // XXX_OneofWrappers is for the internal use of the proto package.
-func (*Msg) XXX_OneofWrappers() []interface{} {
+func (*BlobMessage) XXX_OneofWrappers() []interface{} {
 	return []interface{}{
-		(*Msg_FetchBlobManifest)(nil),
-		(*Msg_SendBlobManifest)(nil),
-		(*Msg_FetchBlobChunk)(nil),
-		(*Msg_SendBlobChunk)(nil),
+		(*BlobMessage_FetchBlobManifest)(nil),
+		(*BlobMessage_SendBlobManifest)(nil),
+		(*BlobMessage_FetchBlobChunk)(nil),
+		(*BlobMessage_SendBlobChunk)(nil),
 	}
 }
 
@@ -325,52 +328,515 @@ func (m *SendBlobChunk) GetExists() bool {
 	return false
 }
 
+type HushMessage struct {
+	// Types that are valid to be assigned to Payload:
+	//	*HushMessage_DhPubkeyAttestations
+	//	*HushMessage_ProposeIndividualSession
+	//	*HushMessage_ApproveIndividualSession
+	//	*HushMessage_SendIndividualMessage
+	Payload isHushMessage_Payload `protobuf_oneof:"payload"`
+}
+
+func (m *HushMessage) Reset()      { *m = HushMessage{} }
+func (*HushMessage) ProtoMessage() {}
+func (*HushMessage) Descriptor() ([]byte, []int) {
+	return fileDescriptor_cad2813fa2bf04bd, []int{5}
+}
+func (m *HushMessage) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *HushMessage) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_HushMessage.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *HushMessage) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_HushMessage.Merge(m, src)
+}
+func (m *HushMessage) XXX_Size() int {
+	return m.Size()
+}
+func (m *HushMessage) XXX_DiscardUnknown() {
+	xxx_messageInfo_HushMessage.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_HushMessage proto.InternalMessageInfo
+
+type isHushMessage_Payload interface {
+	isHushMessage_Payload()
+	Equal(interface{}) bool
+	VerboseEqual(interface{}) error
+	MarshalTo([]byte) (int, error)
+	Size() int
+}
+
+type HushMessage_DhPubkeyAttestations struct {
+	DhPubkeyAttestations *HushDHPubkeyAttestations `protobuf:"bytes,1,opt,name=dhPubkeyAttestations,proto3,oneof" json:"dhPubkeyAttestations,omitempty"`
+}
+type HushMessage_ProposeIndividualSession struct {
+	ProposeIndividualSession *HushProposeIndividualSession `protobuf:"bytes,2,opt,name=proposeIndividualSession,proto3,oneof" json:"proposeIndividualSession,omitempty"`
+}
+type HushMessage_ApproveIndividualSession struct {
+	ApproveIndividualSession *HushApproveIndividualSession `protobuf:"bytes,3,opt,name=approveIndividualSession,proto3,oneof" json:"approveIndividualSession,omitempty"`
+}
+type HushMessage_SendIndividualMessage struct {
+	SendIndividualMessage *HushSendIndividualMessage `protobuf:"bytes,4,opt,name=sendIndividualMessage,proto3,oneof" json:"sendIndividualMessage,omitempty"`
+}
+
+func (*HushMessage_DhPubkeyAttestations) isHushMessage_Payload()     {}
+func (*HushMessage_ProposeIndividualSession) isHushMessage_Payload() {}
+func (*HushMessage_ApproveIndividualSession) isHushMessage_Payload() {}
+func (*HushMessage_SendIndividualMessage) isHushMessage_Payload()    {}
+
+func (m *HushMessage) GetPayload() isHushMessage_Payload {
+	if m != nil {
+		return m.Payload
+	}
+	return nil
+}
+
+func (m *HushMessage) GetDhPubkeyAttestations() *HushDHPubkeyAttestations {
+	if x, ok := m.GetPayload().(*HushMessage_DhPubkeyAttestations); ok {
+		return x.DhPubkeyAttestations
+	}
+	return nil
+}
+
+func (m *HushMessage) GetProposeIndividualSession() *HushProposeIndividualSession {
+	if x, ok := m.GetPayload().(*HushMessage_ProposeIndividualSession); ok {
+		return x.ProposeIndividualSession
+	}
+	return nil
+}
+
+func (m *HushMessage) GetApproveIndividualSession() *HushApproveIndividualSession {
+	if x, ok := m.GetPayload().(*HushMessage_ApproveIndividualSession); ok {
+		return x.ApproveIndividualSession
+	}
+	return nil
+}
+
+func (m *HushMessage) GetSendIndividualMessage() *HushSendIndividualMessage {
+	if x, ok := m.GetPayload().(*HushMessage_SendIndividualMessage); ok {
+		return x.SendIndividualMessage
+	}
+	return nil
+}
+
+// XXX_OneofWrappers is for the internal use of the proto package.
+func (*HushMessage) XXX_OneofWrappers() []interface{} {
+	return []interface{}{
+		(*HushMessage_DhPubkeyAttestations)(nil),
+		(*HushMessage_ProposeIndividualSession)(nil),
+		(*HushMessage_ApproveIndividualSession)(nil),
+		(*HushMessage_SendIndividualMessage)(nil),
+	}
+}
+
+type HushDHPubkeyAttestations struct {
+	Attestations []*pb1.DHPubkeyAttestation `protobuf:"bytes,1,rep,name=attestations,proto3" json:"attestations,omitempty"`
+}
+
+func (m *HushDHPubkeyAttestations) Reset()      { *m = HushDHPubkeyAttestations{} }
+func (*HushDHPubkeyAttestations) ProtoMessage() {}
+func (*HushDHPubkeyAttestations) Descriptor() ([]byte, []int) {
+	return fileDescriptor_cad2813fa2bf04bd, []int{6}
+}
+func (m *HushDHPubkeyAttestations) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *HushDHPubkeyAttestations) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_HushDHPubkeyAttestations.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *HushDHPubkeyAttestations) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_HushDHPubkeyAttestations.Merge(m, src)
+}
+func (m *HushDHPubkeyAttestations) XXX_Size() int {
+	return m.Size()
+}
+func (m *HushDHPubkeyAttestations) XXX_DiscardUnknown() {
+	xxx_messageInfo_HushDHPubkeyAttestations.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_HushDHPubkeyAttestations proto.InternalMessageInfo
+
+func (m *HushDHPubkeyAttestations) GetAttestations() []*pb1.DHPubkeyAttestation {
+	if m != nil {
+		return m.Attestations
+	}
+	return nil
+}
+
+type HushProposeIndividualSession struct {
+	EncryptedProposal []byte `protobuf:"bytes,1,opt,name=encryptedProposal,proto3" json:"encryptedProposal,omitempty"`
+}
+
+func (m *HushProposeIndividualSession) Reset()      { *m = HushProposeIndividualSession{} }
+func (*HushProposeIndividualSession) ProtoMessage() {}
+func (*HushProposeIndividualSession) Descriptor() ([]byte, []int) {
+	return fileDescriptor_cad2813fa2bf04bd, []int{7}
+}
+func (m *HushProposeIndividualSession) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *HushProposeIndividualSession) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_HushProposeIndividualSession.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *HushProposeIndividualSession) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_HushProposeIndividualSession.Merge(m, src)
+}
+func (m *HushProposeIndividualSession) XXX_Size() int {
+	return m.Size()
+}
+func (m *HushProposeIndividualSession) XXX_DiscardUnknown() {
+	xxx_messageInfo_HushProposeIndividualSession.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_HushProposeIndividualSession proto.InternalMessageInfo
+
+func (m *HushProposeIndividualSession) GetEncryptedProposal() []byte {
+	if m != nil {
+		return m.EncryptedProposal
+	}
+	return nil
+}
+
+type HushApproveIndividualSession struct {
+	Approval *pb1.IndividualSessionApproval `protobuf:"bytes,1,opt,name=approval,proto3" json:"approval,omitempty"`
+}
+
+func (m *HushApproveIndividualSession) Reset()      { *m = HushApproveIndividualSession{} }
+func (*HushApproveIndividualSession) ProtoMessage() {}
+func (*HushApproveIndividualSession) Descriptor() ([]byte, []int) {
+	return fileDescriptor_cad2813fa2bf04bd, []int{8}
+}
+func (m *HushApproveIndividualSession) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *HushApproveIndividualSession) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_HushApproveIndividualSession.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *HushApproveIndividualSession) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_HushApproveIndividualSession.Merge(m, src)
+}
+func (m *HushApproveIndividualSession) XXX_Size() int {
+	return m.Size()
+}
+func (m *HushApproveIndividualSession) XXX_DiscardUnknown() {
+	xxx_messageInfo_HushApproveIndividualSession.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_HushApproveIndividualSession proto.InternalMessageInfo
+
+func (m *HushApproveIndividualSession) GetApproval() *pb1.IndividualSessionApproval {
+	if m != nil {
+		return m.Approval
+	}
+	return nil
+}
+
+type HushSendIndividualMessage struct {
+	Message *pb1.IndividualMessage `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+}
+
+func (m *HushSendIndividualMessage) Reset()      { *m = HushSendIndividualMessage{} }
+func (*HushSendIndividualMessage) ProtoMessage() {}
+func (*HushSendIndividualMessage) Descriptor() ([]byte, []int) {
+	return fileDescriptor_cad2813fa2bf04bd, []int{9}
+}
+func (m *HushSendIndividualMessage) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *HushSendIndividualMessage) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_HushSendIndividualMessage.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *HushSendIndividualMessage) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_HushSendIndividualMessage.Merge(m, src)
+}
+func (m *HushSendIndividualMessage) XXX_Size() int {
+	return m.Size()
+}
+func (m *HushSendIndividualMessage) XXX_DiscardUnknown() {
+	xxx_messageInfo_HushSendIndividualMessage.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_HushSendIndividualMessage proto.InternalMessageInfo
+
+func (m *HushSendIndividualMessage) GetMessage() *pb1.IndividualMessage {
+	if m != nil {
+		return m.Message
+	}
+	return nil
+}
+
 func init() {
-	proto.RegisterType((*Msg)(nil), "Redwood.swarm.libp2p.Msg")
+	proto.RegisterType((*BlobMessage)(nil), "Redwood.swarm.libp2p.BlobMessage")
 	proto.RegisterType((*FetchBlobManifest)(nil), "Redwood.swarm.libp2p.FetchBlobManifest")
 	proto.RegisterType((*SendBlobManifest)(nil), "Redwood.swarm.libp2p.SendBlobManifest")
 	proto.RegisterType((*FetchBlobChunk)(nil), "Redwood.swarm.libp2p.FetchBlobChunk")
 	proto.RegisterType((*SendBlobChunk)(nil), "Redwood.swarm.libp2p.SendBlobChunk")
+	proto.RegisterType((*HushMessage)(nil), "Redwood.swarm.libp2p.HushMessage")
+	proto.RegisterType((*HushDHPubkeyAttestations)(nil), "Redwood.swarm.libp2p.HushDHPubkeyAttestations")
+	proto.RegisterType((*HushProposeIndividualSession)(nil), "Redwood.swarm.libp2p.HushProposeIndividualSession")
+	proto.RegisterType((*HushApproveIndividualSession)(nil), "Redwood.swarm.libp2p.HushApproveIndividualSession")
+	proto.RegisterType((*HushSendIndividualMessage)(nil), "Redwood.swarm.libp2p.HushSendIndividualMessage")
 }
 
 func init() { proto.RegisterFile("libp2p.proto", fileDescriptor_cad2813fa2bf04bd) }
 
 var fileDescriptor_cad2813fa2bf04bd = []byte{
-	// 380 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x84, 0x92, 0x4f, 0x4b, 0x02, 0x41,
-	0x18, 0x87, 0x67, 0xd6, 0x3f, 0xc8, 0x9b, 0x8a, 0x0e, 0x22, 0x52, 0x30, 0xc4, 0x26, 0xd5, 0x69,
-	0x17, 0xf4, 0xd4, 0xa1, 0x8b, 0x45, 0x18, 0x61, 0xd0, 0x14, 0x04, 0x1d, 0x02, 0xc7, 0x5d, 0x75,
-	0x49, 0xdd, 0xc5, 0xd9, 0xb2, 0x63, 0x1f, 0xa1, 0x8f, 0xd1, 0x47, 0xe9, 0xe8, 0xd1, 0x63, 0x8e,
-	0x97, 0x8e, 0x7e, 0x84, 0x70, 0x56, 0x85, 0x5d, 0xad, 0x4e, 0xbb, 0xc3, 0xfe, 0xde, 0xe7, 0x9d,
-	0xf7, 0x79, 0x17, 0xd2, 0x3d, 0x87, 0x7b, 0x15, 0xcf, 0xf0, 0x86, 0xae, 0xef, 0x92, 0x02, 0xb3,
-	0xad, 0x91, 0xeb, 0x5a, 0x86, 0x18, 0x35, 0x87, 0x7d, 0x23, 0xf8, 0xb6, 0x4b, 0x78, 0xcf, 0xe5,
-	0xa6, 0xc7, 0xcd, 0xc5, 0x33, 0x48, 0xea, 0x13, 0x0d, 0x62, 0x0d, 0xd1, 0x21, 0xf7, 0x90, 0x6f,
-	0xdb, 0x7e, 0xab, 0x5b, 0xeb, 0xb9, 0xbc, 0xd1, 0x1c, 0x38, 0x6d, 0x5b, 0xf8, 0x25, 0xbc, 0x8f,
-	0x8f, 0x77, 0x2a, 0x47, 0xc6, 0x36, 0x9a, 0x71, 0x11, 0x8d, 0xd7, 0x11, 0xdb, 0x64, 0x90, 0x3b,
-	0xc8, 0x09, 0x7b, 0x60, 0x85, 0xb8, 0x9a, 0xe2, 0x1e, 0x6e, 0xe7, 0xde, 0x46, 0xd2, 0x75, 0xc4,
-	0x36, 0x08, 0xe4, 0x1a, 0xb2, 0xeb, 0x56, 0x67, 0xdd, 0xe7, 0xc1, 0x53, 0x29, 0xa6, 0x98, 0xe5,
-	0x7f, 0xee, 0xaa, 0xb2, 0x75, 0xc4, 0x22, 0xd5, 0xe4, 0x0a, 0x32, 0xab, 0x1e, 0x01, 0x2e, 0xae,
-	0x70, 0x07, 0x7f, 0x5f, 0x71, 0x45, 0x0b, 0xd7, 0xd6, 0x12, 0x10, 0xeb, 0x8b, 0x8e, 0x7e, 0x02,
-	0xf9, 0x0d, 0x47, 0xa4, 0x0c, 0x9a, 0x63, 0x2d, 0xc5, 0x16, 0xd6, 0x74, 0xb5, 0x90, 0x45, 0xee,
-	0xf2, 0x9c, 0x69, 0x8e, 0xa5, 0x3f, 0x42, 0x2e, 0xaa, 0x81, 0x54, 0x20, 0xd5, 0x0f, 0x2f, 0xa6,
-	0x18, 0xae, 0x5f, 0x25, 0xd9, 0x3a, 0x47, 0x8a, 0x90, 0xb4, 0x5f, 0x1d, 0xe1, 0x0b, 0xa5, 0x3c,
-	0xc5, 0x96, 0x27, 0xbd, 0x0c, 0xd9, 0xb0, 0x12, 0x42, 0x20, 0x2e, 0xba, 0xcd, 0xaa, 0x22, 0xa7,
-	0x99, 0x7a, 0xd7, 0x4f, 0x21, 0x13, 0x9a, 0x94, 0x14, 0x20, 0xd1, 0x52, 0x76, 0x82, 0x54, 0x70,
-	0xf8, 0xad, 0x49, 0xed, 0x66, 0x3c, 0xa5, 0x68, 0x32, 0xa5, 0x68, 0x3e, 0xa5, 0xf8, 0x4d, 0x52,
-	0xfc, 0x21, 0x29, 0xfe, 0x94, 0x14, 0x8f, 0x25, 0xc5, 0x5f, 0x92, 0xe2, 0x6f, 0x49, 0xd1, 0x5c,
-	0x52, 0xfc, 0x3e, 0xa3, 0x68, 0x3c, 0xa3, 0x68, 0x32, 0xa3, 0xe8, 0x61, 0x6f, 0xb8, 0x9c, 0xc9,
-	0xb2, 0x5f, 0x4c, 0x65, 0xdd, 0x0c, 0xac, 0x9b, 0x1e, 0xe7, 0x49, 0xf5, 0xd3, 0x56, 0x7f, 0x02,
-	0x00, 0x00, 0xff, 0xff, 0xef, 0x91, 0x6a, 0x72, 0xee, 0x02, 0x00, 0x00,
+	// 664 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x95, 0x41, 0x4f, 0xd4, 0x40,
+	0x14, 0xc7, 0xdb, 0x5d, 0x04, 0x7c, 0x0b, 0x04, 0x26, 0x2b, 0x59, 0x51, 0x27, 0xa6, 0x12, 0x25,
+	0x06, 0xbb, 0xc9, 0x72, 0xf2, 0xe0, 0x01, 0x24, 0xa6, 0x44, 0x25, 0x64, 0x30, 0x31, 0xf1, 0x60,
+	0xd2, 0x6e, 0x87, 0x6d, 0x43, 0xb7, 0xd3, 0xec, 0xb4, 0x20, 0x37, 0x3f, 0x82, 0x1f, 0xc3, 0x8f,
+	0xe0, 0xd1, 0xa3, 0x89, 0x17, 0x8e, 0x1c, 0xd9, 0xe2, 0xc1, 0x23, 0x47, 0x8f, 0xa6, 0x33, 0xb3,
+	0x8b, 0xdd, 0xb6, 0xe0, 0x69, 0x3b, 0x9d, 0xf7, 0xff, 0xfd, 0x5f, 0xff, 0xef, 0x05, 0x60, 0x2e,
+	0xf0, 0x9d, 0xa8, 0x13, 0x99, 0xd1, 0x80, 0xc5, 0x0c, 0x35, 0x09, 0x75, 0x8f, 0x19, 0x73, 0x4d,
+	0x7e, 0x6c, 0x0f, 0xfa, 0xa6, 0xbc, 0x5b, 0x79, 0xd6, 0xf3, 0x63, 0x2f, 0x71, 0xcc, 0x2e, 0xeb,
+	0xb7, 0x7b, 0xac, 0xc7, 0xda, 0xa2, 0xd8, 0x49, 0x0e, 0xc4, 0x49, 0x1c, 0xc4, 0x93, 0x84, 0xac,
+	0x20, 0x27, 0x60, 0x4e, 0x3b, 0x72, 0xda, 0xd9, 0xaf, 0x7a, 0xf7, 0x40, 0x00, 0xa5, 0xd0, 0x4b,
+	0xb8, 0x97, 0x5d, 0x67, 0xbf, 0xf2, 0xda, 0xf8, 0x55, 0x83, 0xc6, 0x56, 0xc0, 0x9c, 0xb7, 0x94,
+	0x73, 0xbb, 0x47, 0xd1, 0x7b, 0x58, 0x3a, 0xa0, 0x71, 0xd7, 0x13, 0xef, 0xec, 0xd0, 0x3f, 0xa0,
+	0x3c, 0x6e, 0xe9, 0x0f, 0xf5, 0xb5, 0x46, 0xe7, 0x89, 0x59, 0xd6, 0xa3, 0xf9, 0x6a, 0xb2, 0xdc,
+	0xd2, 0x48, 0x91, 0x81, 0xde, 0xc1, 0x22, 0xa7, 0xa1, 0x9b, 0xe3, 0xd6, 0x04, 0xf7, 0x71, 0x39,
+	0x77, 0x7f, 0xa2, 0xda, 0xd2, 0x48, 0x81, 0x80, 0x76, 0x61, 0x61, 0x6c, 0xf5, 0xd2, 0x4b, 0xc2,
+	0xc3, 0x56, 0x5d, 0x30, 0x57, 0x6f, 0xe8, 0x55, 0xd4, 0x5a, 0x1a, 0x99, 0x50, 0xa3, 0xd7, 0x30,
+	0x3f, 0xf2, 0x90, 0xb8, 0x29, 0x81, 0x7b, 0x74, 0x7d, 0x8b, 0x23, 0x5a, 0x5e, 0xbb, 0x75, 0x1b,
+	0x66, 0x22, 0xfb, 0x24, 0x60, 0xb6, 0x6b, 0x3c, 0x87, 0xa5, 0x42, 0x4e, 0x68, 0x15, 0x6a, 0xbe,
+	0xab, 0xc2, 0x6d, 0x8e, 0x1d, 0xc4, 0xec, 0xb2, 0xba, 0x9d, 0x6d, 0x52, 0xf3, 0x5d, 0xe3, 0x23,
+	0x2c, 0x4e, 0x46, 0x81, 0x3a, 0x30, 0xdb, 0xcf, 0x0f, 0x67, 0x39, 0xaf, 0x1f, 0x55, 0x92, 0x71,
+	0x1d, 0x5a, 0x86, 0x69, 0xfa, 0xc9, 0xe7, 0x31, 0x17, 0xb1, 0xcf, 0x12, 0x75, 0x32, 0x56, 0x61,
+	0x21, 0x1f, 0x0b, 0x42, 0x30, 0xc5, 0x3d, 0x7b, 0x43, 0x90, 0xe7, 0x88, 0x78, 0x36, 0x5e, 0xc0,
+	0x7c, 0xee, 0x6b, 0x51, 0x13, 0x6e, 0x75, 0x45, 0x42, 0xb2, 0x4a, 0x1e, 0x2a, 0x4d, 0x7e, 0xd6,
+	0xa1, 0x61, 0x25, 0xdc, 0x1b, 0xad, 0x99, 0x0b, 0x4d, 0xd7, 0xdb, 0x4b, 0x9c, 0x43, 0x7a, 0xb2,
+	0x19, 0xc7, 0x94, 0xc7, 0x76, 0xec, 0xb3, 0x90, 0xab, 0x8f, 0x31, 0xcb, 0xe3, 0xce, 0x00, 0xdb,
+	0x56, 0x51, 0x65, 0x69, 0xa4, 0x94, 0x86, 0x22, 0x68, 0x45, 0x03, 0x16, 0x31, 0x4e, 0x77, 0x42,
+	0xd7, 0x3f, 0xf2, 0xdd, 0xc4, 0x0e, 0xf6, 0x29, 0xe7, 0x3e, 0x0b, 0xd5, 0xee, 0x75, 0xaa, 0x9d,
+	0xf6, 0x2a, 0x94, 0x96, 0x46, 0x2a, 0xa9, 0x99, 0xa3, 0x1d, 0x45, 0x03, 0x76, 0x54, 0xe2, 0x58,
+	0xbf, 0xc9, 0x71, 0xb3, 0x42, 0x99, 0x39, 0x56, 0x51, 0x51, 0x0f, 0xee, 0x64, 0x5b, 0x77, 0x75,
+	0xa1, 0x22, 0x56, 0x9b, 0xdb, 0xae, 0xb6, 0xdb, 0x2f, 0x93, 0x59, 0x1a, 0x29, 0xe7, 0xfd, 0xbb,
+	0xcd, 0x01, 0xb4, 0xaa, 0x66, 0x81, 0xf6, 0x60, 0xce, 0xce, 0x4f, 0xb4, 0xbe, 0xd6, 0xe8, 0xac,
+	0x4f, 0xb4, 0x31, 0xfe, 0x73, 0x64, 0x96, 0x40, 0x48, 0x8e, 0x60, 0xbc, 0x81, 0xfb, 0xd7, 0xcd,
+	0x03, 0xad, 0xc3, 0x12, 0x0d, 0xbb, 0x83, 0x93, 0x28, 0xa6, 0xae, 0x2c, 0xb2, 0x03, 0xb5, 0x95,
+	0xc5, 0x0b, 0x23, 0x94, 0xb4, 0xaa, 0xac, 0xd1, 0x2e, 0xcc, 0xca, 0xac, 0x15, 0xa4, 0x38, 0xb1,
+	0xab, 0xde, 0x0b, 0xea, 0x4d, 0xa5, 0x24, 0x63, 0x86, 0x61, 0xc3, 0xdd, 0xca, 0xb0, 0xd1, 0x36,
+	0xcc, 0xf4, 0xd5, 0xb8, 0xa4, 0xd7, 0xd3, 0xff, 0xf0, 0x52, 0x62, 0x32, 0x92, 0x6e, 0xd9, 0xa7,
+	0x43, 0xac, 0x9d, 0x0d, 0xb1, 0x76, 0x3e, 0xc4, 0xfa, 0xe5, 0x10, 0xeb, 0x7f, 0x86, 0x58, 0xff,
+	0x9c, 0x62, 0xfd, 0x6b, 0x8a, 0xf5, 0x6f, 0x29, 0xd6, 0xbf, 0xa7, 0x58, 0xff, 0x91, 0x62, 0xfd,
+	0x34, 0xc5, 0xfa, 0x79, 0x8a, 0xf5, 0xdf, 0x29, 0xd6, 0x2e, 0x53, 0xac, 0x7f, 0xb9, 0xc0, 0xda,
+	0xe9, 0x05, 0xd6, 0xce, 0x2e, 0xb0, 0xf6, 0xe1, 0xde, 0x40, 0x39, 0xbb, 0xf4, 0xa8, 0x2d, 0xff,
+	0x69, 0xc8, 0x65, 0x69, 0x47, 0x8e, 0x33, 0x2d, 0x1a, 0xd9, 0xf8, 0x1b, 0x00, 0x00, 0xff, 0xff,
+	0xdc, 0xcf, 0xf7, 0xc6, 0xb5, 0x06, 0x00, 0x00,
 }
 
-func (this *Msg) Equal(that interface{}) bool {
+func (this *BlobMessage) VerboseEqual(that interface{}) error {
+	if that == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that == nil && this != nil")
+	}
+
+	that1, ok := that.(*BlobMessage)
+	if !ok {
+		that2, ok := that.(BlobMessage)
+		if ok {
+			that1 = &that2
+		} else {
+			return fmt.Errorf("that is not of type *BlobMessage")
+		}
+	}
+	if that1 == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that is type *BlobMessage but is nil && this != nil")
+	} else if this == nil {
+		return fmt.Errorf("that is type *BlobMessage but is not nil && this == nil")
+	}
+	if that1.Payload == nil {
+		if this.Payload != nil {
+			return fmt.Errorf("this.Payload != nil && that1.Payload == nil")
+		}
+	} else if this.Payload == nil {
+		return fmt.Errorf("this.Payload == nil && that1.Payload != nil")
+	} else if err := this.Payload.VerboseEqual(that1.Payload); err != nil {
+		return err
+	}
+	return nil
+}
+func (this *BlobMessage_FetchBlobManifest) VerboseEqual(that interface{}) error {
+	if that == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that == nil && this != nil")
+	}
+
+	that1, ok := that.(*BlobMessage_FetchBlobManifest)
+	if !ok {
+		that2, ok := that.(BlobMessage_FetchBlobManifest)
+		if ok {
+			that1 = &that2
+		} else {
+			return fmt.Errorf("that is not of type *BlobMessage_FetchBlobManifest")
+		}
+	}
+	if that1 == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that is type *BlobMessage_FetchBlobManifest but is nil && this != nil")
+	} else if this == nil {
+		return fmt.Errorf("that is type *BlobMessage_FetchBlobManifest but is not nil && this == nil")
+	}
+	if !this.FetchBlobManifest.Equal(that1.FetchBlobManifest) {
+		return fmt.Errorf("FetchBlobManifest this(%v) Not Equal that(%v)", this.FetchBlobManifest, that1.FetchBlobManifest)
+	}
+	return nil
+}
+func (this *BlobMessage_SendBlobManifest) VerboseEqual(that interface{}) error {
+	if that == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that == nil && this != nil")
+	}
+
+	that1, ok := that.(*BlobMessage_SendBlobManifest)
+	if !ok {
+		that2, ok := that.(BlobMessage_SendBlobManifest)
+		if ok {
+			that1 = &that2
+		} else {
+			return fmt.Errorf("that is not of type *BlobMessage_SendBlobManifest")
+		}
+	}
+	if that1 == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that is type *BlobMessage_SendBlobManifest but is nil && this != nil")
+	} else if this == nil {
+		return fmt.Errorf("that is type *BlobMessage_SendBlobManifest but is not nil && this == nil")
+	}
+	if !this.SendBlobManifest.Equal(that1.SendBlobManifest) {
+		return fmt.Errorf("SendBlobManifest this(%v) Not Equal that(%v)", this.SendBlobManifest, that1.SendBlobManifest)
+	}
+	return nil
+}
+func (this *BlobMessage_FetchBlobChunk) VerboseEqual(that interface{}) error {
+	if that == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that == nil && this != nil")
+	}
+
+	that1, ok := that.(*BlobMessage_FetchBlobChunk)
+	if !ok {
+		that2, ok := that.(BlobMessage_FetchBlobChunk)
+		if ok {
+			that1 = &that2
+		} else {
+			return fmt.Errorf("that is not of type *BlobMessage_FetchBlobChunk")
+		}
+	}
+	if that1 == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that is type *BlobMessage_FetchBlobChunk but is nil && this != nil")
+	} else if this == nil {
+		return fmt.Errorf("that is type *BlobMessage_FetchBlobChunk but is not nil && this == nil")
+	}
+	if !this.FetchBlobChunk.Equal(that1.FetchBlobChunk) {
+		return fmt.Errorf("FetchBlobChunk this(%v) Not Equal that(%v)", this.FetchBlobChunk, that1.FetchBlobChunk)
+	}
+	return nil
+}
+func (this *BlobMessage_SendBlobChunk) VerboseEqual(that interface{}) error {
+	if that == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that == nil && this != nil")
+	}
+
+	that1, ok := that.(*BlobMessage_SendBlobChunk)
+	if !ok {
+		that2, ok := that.(BlobMessage_SendBlobChunk)
+		if ok {
+			that1 = &that2
+		} else {
+			return fmt.Errorf("that is not of type *BlobMessage_SendBlobChunk")
+		}
+	}
+	if that1 == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that is type *BlobMessage_SendBlobChunk but is nil && this != nil")
+	} else if this == nil {
+		return fmt.Errorf("that is type *BlobMessage_SendBlobChunk but is not nil && this == nil")
+	}
+	if !this.SendBlobChunk.Equal(that1.SendBlobChunk) {
+		return fmt.Errorf("SendBlobChunk this(%v) Not Equal that(%v)", this.SendBlobChunk, that1.SendBlobChunk)
+	}
+	return nil
+}
+func (this *BlobMessage) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*Msg)
+	that1, ok := that.(*BlobMessage)
 	if !ok {
-		that2, ok := that.(Msg)
+		that2, ok := that.(BlobMessage)
 		if ok {
 			that1 = &that2
 		} else {
@@ -382,25 +848,25 @@ func (this *Msg) Equal(that interface{}) bool {
 	} else if this == nil {
 		return false
 	}
-	if that1.Msg == nil {
-		if this.Msg != nil {
+	if that1.Payload == nil {
+		if this.Payload != nil {
 			return false
 		}
-	} else if this.Msg == nil {
+	} else if this.Payload == nil {
 		return false
-	} else if !this.Msg.Equal(that1.Msg) {
+	} else if !this.Payload.Equal(that1.Payload) {
 		return false
 	}
 	return true
 }
-func (this *Msg_FetchBlobManifest) Equal(that interface{}) bool {
+func (this *BlobMessage_FetchBlobManifest) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*Msg_FetchBlobManifest)
+	that1, ok := that.(*BlobMessage_FetchBlobManifest)
 	if !ok {
-		that2, ok := that.(Msg_FetchBlobManifest)
+		that2, ok := that.(BlobMessage_FetchBlobManifest)
 		if ok {
 			that1 = &that2
 		} else {
@@ -417,14 +883,14 @@ func (this *Msg_FetchBlobManifest) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *Msg_SendBlobManifest) Equal(that interface{}) bool {
+func (this *BlobMessage_SendBlobManifest) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*Msg_SendBlobManifest)
+	that1, ok := that.(*BlobMessage_SendBlobManifest)
 	if !ok {
-		that2, ok := that.(Msg_SendBlobManifest)
+		that2, ok := that.(BlobMessage_SendBlobManifest)
 		if ok {
 			that1 = &that2
 		} else {
@@ -441,14 +907,14 @@ func (this *Msg_SendBlobManifest) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *Msg_FetchBlobChunk) Equal(that interface{}) bool {
+func (this *BlobMessage_FetchBlobChunk) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*Msg_FetchBlobChunk)
+	that1, ok := that.(*BlobMessage_FetchBlobChunk)
 	if !ok {
-		that2, ok := that.(Msg_FetchBlobChunk)
+		that2, ok := that.(BlobMessage_FetchBlobChunk)
 		if ok {
 			that1 = &that2
 		} else {
@@ -465,14 +931,14 @@ func (this *Msg_FetchBlobChunk) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *Msg_SendBlobChunk) Equal(that interface{}) bool {
+func (this *BlobMessage_SendBlobChunk) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*Msg_SendBlobChunk)
+	that1, ok := that.(*BlobMessage_SendBlobChunk)
 	if !ok {
-		that2, ok := that.(Msg_SendBlobChunk)
+		that2, ok := that.(BlobMessage_SendBlobChunk)
 		if ok {
 			that1 = &that2
 		} else {
@@ -488,6 +954,36 @@ func (this *Msg_SendBlobChunk) Equal(that interface{}) bool {
 		return false
 	}
 	return true
+}
+func (this *FetchBlobManifest) VerboseEqual(that interface{}) error {
+	if that == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that == nil && this != nil")
+	}
+
+	that1, ok := that.(*FetchBlobManifest)
+	if !ok {
+		that2, ok := that.(FetchBlobManifest)
+		if ok {
+			that1 = &that2
+		} else {
+			return fmt.Errorf("that is not of type *FetchBlobManifest")
+		}
+	}
+	if that1 == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that is type *FetchBlobManifest but is nil && this != nil")
+	} else if this == nil {
+		return fmt.Errorf("that is type *FetchBlobManifest but is not nil && this == nil")
+	}
+	if !this.Id.Equal(that1.Id) {
+		return fmt.Errorf("Id this(%v) Not Equal that(%v)", this.Id, that1.Id)
+	}
+	return nil
 }
 func (this *FetchBlobManifest) Equal(that interface{}) bool {
 	if that == nil {
@@ -512,6 +1008,39 @@ func (this *FetchBlobManifest) Equal(that interface{}) bool {
 		return false
 	}
 	return true
+}
+func (this *SendBlobManifest) VerboseEqual(that interface{}) error {
+	if that == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that == nil && this != nil")
+	}
+
+	that1, ok := that.(*SendBlobManifest)
+	if !ok {
+		that2, ok := that.(SendBlobManifest)
+		if ok {
+			that1 = &that2
+		} else {
+			return fmt.Errorf("that is not of type *SendBlobManifest")
+		}
+	}
+	if that1 == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that is type *SendBlobManifest but is nil && this != nil")
+	} else if this == nil {
+		return fmt.Errorf("that is type *SendBlobManifest but is not nil && this == nil")
+	}
+	if !this.Manifest.Equal(that1.Manifest) {
+		return fmt.Errorf("Manifest this(%v) Not Equal that(%v)", this.Manifest, that1.Manifest)
+	}
+	if this.Exists != that1.Exists {
+		return fmt.Errorf("Exists this(%v) Not Equal that(%v)", this.Exists, that1.Exists)
+	}
+	return nil
 }
 func (this *SendBlobManifest) Equal(that interface{}) bool {
 	if that == nil {
@@ -540,6 +1069,36 @@ func (this *SendBlobManifest) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *FetchBlobChunk) VerboseEqual(that interface{}) error {
+	if that == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that == nil && this != nil")
+	}
+
+	that1, ok := that.(*FetchBlobChunk)
+	if !ok {
+		that2, ok := that.(FetchBlobChunk)
+		if ok {
+			that1 = &that2
+		} else {
+			return fmt.Errorf("that is not of type *FetchBlobChunk")
+		}
+	}
+	if that1 == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that is type *FetchBlobChunk but is nil && this != nil")
+	} else if this == nil {
+		return fmt.Errorf("that is type *FetchBlobChunk but is not nil && this == nil")
+	}
+	if !bytes.Equal(this.Sha3, that1.Sha3) {
+		return fmt.Errorf("Sha3 this(%v) Not Equal that(%v)", this.Sha3, that1.Sha3)
+	}
+	return nil
+}
 func (this *FetchBlobChunk) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -563,6 +1122,39 @@ func (this *FetchBlobChunk) Equal(that interface{}) bool {
 		return false
 	}
 	return true
+}
+func (this *SendBlobChunk) VerboseEqual(that interface{}) error {
+	if that == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that == nil && this != nil")
+	}
+
+	that1, ok := that.(*SendBlobChunk)
+	if !ok {
+		that2, ok := that.(SendBlobChunk)
+		if ok {
+			that1 = &that2
+		} else {
+			return fmt.Errorf("that is not of type *SendBlobChunk")
+		}
+	}
+	if that1 == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that is type *SendBlobChunk but is nil && this != nil")
+	} else if this == nil {
+		return fmt.Errorf("that is type *SendBlobChunk but is not nil && this == nil")
+	}
+	if !bytes.Equal(this.Chunk, that1.Chunk) {
+		return fmt.Errorf("Chunk this(%v) Not Equal that(%v)", this.Chunk, that1.Chunk)
+	}
+	if this.Exists != that1.Exists {
+		return fmt.Errorf("Exists this(%v) Not Equal that(%v)", this.Exists, that1.Exists)
+	}
+	return nil
 }
 func (this *SendBlobChunk) Equal(that interface{}) bool {
 	if that == nil {
@@ -591,47 +1183,555 @@ func (this *SendBlobChunk) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *Msg) GoString() string {
+func (this *HushMessage) VerboseEqual(that interface{}) error {
+	if that == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that == nil && this != nil")
+	}
+
+	that1, ok := that.(*HushMessage)
+	if !ok {
+		that2, ok := that.(HushMessage)
+		if ok {
+			that1 = &that2
+		} else {
+			return fmt.Errorf("that is not of type *HushMessage")
+		}
+	}
+	if that1 == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that is type *HushMessage but is nil && this != nil")
+	} else if this == nil {
+		return fmt.Errorf("that is type *HushMessage but is not nil && this == nil")
+	}
+	if that1.Payload == nil {
+		if this.Payload != nil {
+			return fmt.Errorf("this.Payload != nil && that1.Payload == nil")
+		}
+	} else if this.Payload == nil {
+		return fmt.Errorf("this.Payload == nil && that1.Payload != nil")
+	} else if err := this.Payload.VerboseEqual(that1.Payload); err != nil {
+		return err
+	}
+	return nil
+}
+func (this *HushMessage_DhPubkeyAttestations) VerboseEqual(that interface{}) error {
+	if that == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that == nil && this != nil")
+	}
+
+	that1, ok := that.(*HushMessage_DhPubkeyAttestations)
+	if !ok {
+		that2, ok := that.(HushMessage_DhPubkeyAttestations)
+		if ok {
+			that1 = &that2
+		} else {
+			return fmt.Errorf("that is not of type *HushMessage_DhPubkeyAttestations")
+		}
+	}
+	if that1 == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that is type *HushMessage_DhPubkeyAttestations but is nil && this != nil")
+	} else if this == nil {
+		return fmt.Errorf("that is type *HushMessage_DhPubkeyAttestations but is not nil && this == nil")
+	}
+	if !this.DhPubkeyAttestations.Equal(that1.DhPubkeyAttestations) {
+		return fmt.Errorf("DhPubkeyAttestations this(%v) Not Equal that(%v)", this.DhPubkeyAttestations, that1.DhPubkeyAttestations)
+	}
+	return nil
+}
+func (this *HushMessage_ProposeIndividualSession) VerboseEqual(that interface{}) error {
+	if that == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that == nil && this != nil")
+	}
+
+	that1, ok := that.(*HushMessage_ProposeIndividualSession)
+	if !ok {
+		that2, ok := that.(HushMessage_ProposeIndividualSession)
+		if ok {
+			that1 = &that2
+		} else {
+			return fmt.Errorf("that is not of type *HushMessage_ProposeIndividualSession")
+		}
+	}
+	if that1 == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that is type *HushMessage_ProposeIndividualSession but is nil && this != nil")
+	} else if this == nil {
+		return fmt.Errorf("that is type *HushMessage_ProposeIndividualSession but is not nil && this == nil")
+	}
+	if !this.ProposeIndividualSession.Equal(that1.ProposeIndividualSession) {
+		return fmt.Errorf("ProposeIndividualSession this(%v) Not Equal that(%v)", this.ProposeIndividualSession, that1.ProposeIndividualSession)
+	}
+	return nil
+}
+func (this *HushMessage_ApproveIndividualSession) VerboseEqual(that interface{}) error {
+	if that == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that == nil && this != nil")
+	}
+
+	that1, ok := that.(*HushMessage_ApproveIndividualSession)
+	if !ok {
+		that2, ok := that.(HushMessage_ApproveIndividualSession)
+		if ok {
+			that1 = &that2
+		} else {
+			return fmt.Errorf("that is not of type *HushMessage_ApproveIndividualSession")
+		}
+	}
+	if that1 == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that is type *HushMessage_ApproveIndividualSession but is nil && this != nil")
+	} else if this == nil {
+		return fmt.Errorf("that is type *HushMessage_ApproveIndividualSession but is not nil && this == nil")
+	}
+	if !this.ApproveIndividualSession.Equal(that1.ApproveIndividualSession) {
+		return fmt.Errorf("ApproveIndividualSession this(%v) Not Equal that(%v)", this.ApproveIndividualSession, that1.ApproveIndividualSession)
+	}
+	return nil
+}
+func (this *HushMessage_SendIndividualMessage) VerboseEqual(that interface{}) error {
+	if that == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that == nil && this != nil")
+	}
+
+	that1, ok := that.(*HushMessage_SendIndividualMessage)
+	if !ok {
+		that2, ok := that.(HushMessage_SendIndividualMessage)
+		if ok {
+			that1 = &that2
+		} else {
+			return fmt.Errorf("that is not of type *HushMessage_SendIndividualMessage")
+		}
+	}
+	if that1 == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that is type *HushMessage_SendIndividualMessage but is nil && this != nil")
+	} else if this == nil {
+		return fmt.Errorf("that is type *HushMessage_SendIndividualMessage but is not nil && this == nil")
+	}
+	if !this.SendIndividualMessage.Equal(that1.SendIndividualMessage) {
+		return fmt.Errorf("SendIndividualMessage this(%v) Not Equal that(%v)", this.SendIndividualMessage, that1.SendIndividualMessage)
+	}
+	return nil
+}
+func (this *HushMessage) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*HushMessage)
+	if !ok {
+		that2, ok := that.(HushMessage)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if that1.Payload == nil {
+		if this.Payload != nil {
+			return false
+		}
+	} else if this.Payload == nil {
+		return false
+	} else if !this.Payload.Equal(that1.Payload) {
+		return false
+	}
+	return true
+}
+func (this *HushMessage_DhPubkeyAttestations) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*HushMessage_DhPubkeyAttestations)
+	if !ok {
+		that2, ok := that.(HushMessage_DhPubkeyAttestations)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.DhPubkeyAttestations.Equal(that1.DhPubkeyAttestations) {
+		return false
+	}
+	return true
+}
+func (this *HushMessage_ProposeIndividualSession) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*HushMessage_ProposeIndividualSession)
+	if !ok {
+		that2, ok := that.(HushMessage_ProposeIndividualSession)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.ProposeIndividualSession.Equal(that1.ProposeIndividualSession) {
+		return false
+	}
+	return true
+}
+func (this *HushMessage_ApproveIndividualSession) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*HushMessage_ApproveIndividualSession)
+	if !ok {
+		that2, ok := that.(HushMessage_ApproveIndividualSession)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.ApproveIndividualSession.Equal(that1.ApproveIndividualSession) {
+		return false
+	}
+	return true
+}
+func (this *HushMessage_SendIndividualMessage) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*HushMessage_SendIndividualMessage)
+	if !ok {
+		that2, ok := that.(HushMessage_SendIndividualMessage)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.SendIndividualMessage.Equal(that1.SendIndividualMessage) {
+		return false
+	}
+	return true
+}
+func (this *HushDHPubkeyAttestations) VerboseEqual(that interface{}) error {
+	if that == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that == nil && this != nil")
+	}
+
+	that1, ok := that.(*HushDHPubkeyAttestations)
+	if !ok {
+		that2, ok := that.(HushDHPubkeyAttestations)
+		if ok {
+			that1 = &that2
+		} else {
+			return fmt.Errorf("that is not of type *HushDHPubkeyAttestations")
+		}
+	}
+	if that1 == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that is type *HushDHPubkeyAttestations but is nil && this != nil")
+	} else if this == nil {
+		return fmt.Errorf("that is type *HushDHPubkeyAttestations but is not nil && this == nil")
+	}
+	if len(this.Attestations) != len(that1.Attestations) {
+		return fmt.Errorf("Attestations this(%v) Not Equal that(%v)", len(this.Attestations), len(that1.Attestations))
+	}
+	for i := range this.Attestations {
+		if !this.Attestations[i].Equal(that1.Attestations[i]) {
+			return fmt.Errorf("Attestations this[%v](%v) Not Equal that[%v](%v)", i, this.Attestations[i], i, that1.Attestations[i])
+		}
+	}
+	return nil
+}
+func (this *HushDHPubkeyAttestations) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*HushDHPubkeyAttestations)
+	if !ok {
+		that2, ok := that.(HushDHPubkeyAttestations)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Attestations) != len(that1.Attestations) {
+		return false
+	}
+	for i := range this.Attestations {
+		if !this.Attestations[i].Equal(that1.Attestations[i]) {
+			return false
+		}
+	}
+	return true
+}
+func (this *HushProposeIndividualSession) VerboseEqual(that interface{}) error {
+	if that == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that == nil && this != nil")
+	}
+
+	that1, ok := that.(*HushProposeIndividualSession)
+	if !ok {
+		that2, ok := that.(HushProposeIndividualSession)
+		if ok {
+			that1 = &that2
+		} else {
+			return fmt.Errorf("that is not of type *HushProposeIndividualSession")
+		}
+	}
+	if that1 == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that is type *HushProposeIndividualSession but is nil && this != nil")
+	} else if this == nil {
+		return fmt.Errorf("that is type *HushProposeIndividualSession but is not nil && this == nil")
+	}
+	if !bytes.Equal(this.EncryptedProposal, that1.EncryptedProposal) {
+		return fmt.Errorf("EncryptedProposal this(%v) Not Equal that(%v)", this.EncryptedProposal, that1.EncryptedProposal)
+	}
+	return nil
+}
+func (this *HushProposeIndividualSession) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*HushProposeIndividualSession)
+	if !ok {
+		that2, ok := that.(HushProposeIndividualSession)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !bytes.Equal(this.EncryptedProposal, that1.EncryptedProposal) {
+		return false
+	}
+	return true
+}
+func (this *HushApproveIndividualSession) VerboseEqual(that interface{}) error {
+	if that == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that == nil && this != nil")
+	}
+
+	that1, ok := that.(*HushApproveIndividualSession)
+	if !ok {
+		that2, ok := that.(HushApproveIndividualSession)
+		if ok {
+			that1 = &that2
+		} else {
+			return fmt.Errorf("that is not of type *HushApproveIndividualSession")
+		}
+	}
+	if that1 == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that is type *HushApproveIndividualSession but is nil && this != nil")
+	} else if this == nil {
+		return fmt.Errorf("that is type *HushApproveIndividualSession but is not nil && this == nil")
+	}
+	if !this.Approval.Equal(that1.Approval) {
+		return fmt.Errorf("Approval this(%v) Not Equal that(%v)", this.Approval, that1.Approval)
+	}
+	return nil
+}
+func (this *HushApproveIndividualSession) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*HushApproveIndividualSession)
+	if !ok {
+		that2, ok := that.(HushApproveIndividualSession)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Approval.Equal(that1.Approval) {
+		return false
+	}
+	return true
+}
+func (this *HushSendIndividualMessage) VerboseEqual(that interface{}) error {
+	if that == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that == nil && this != nil")
+	}
+
+	that1, ok := that.(*HushSendIndividualMessage)
+	if !ok {
+		that2, ok := that.(HushSendIndividualMessage)
+		if ok {
+			that1 = &that2
+		} else {
+			return fmt.Errorf("that is not of type *HushSendIndividualMessage")
+		}
+	}
+	if that1 == nil {
+		if this == nil {
+			return nil
+		}
+		return fmt.Errorf("that is type *HushSendIndividualMessage but is nil && this != nil")
+	} else if this == nil {
+		return fmt.Errorf("that is type *HushSendIndividualMessage but is not nil && this == nil")
+	}
+	if !this.Message.Equal(that1.Message) {
+		return fmt.Errorf("Message this(%v) Not Equal that(%v)", this.Message, that1.Message)
+	}
+	return nil
+}
+func (this *HushSendIndividualMessage) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*HushSendIndividualMessage)
+	if !ok {
+		that2, ok := that.(HushSendIndividualMessage)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.Message.Equal(that1.Message) {
+		return false
+	}
+	return true
+}
+func (this *BlobMessage) GoString() string {
 	if this == nil {
 		return "nil"
 	}
 	s := make([]string, 0, 8)
-	s = append(s, "&pb.Msg{")
-	if this.Msg != nil {
-		s = append(s, "Msg: "+fmt.Sprintf("%#v", this.Msg)+",\n")
+	s = append(s, "&pb.BlobMessage{")
+	if this.Payload != nil {
+		s = append(s, "Payload: "+fmt.Sprintf("%#v", this.Payload)+",\n")
 	}
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
-func (this *Msg_FetchBlobManifest) GoString() string {
+func (this *BlobMessage_FetchBlobManifest) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&pb.Msg_FetchBlobManifest{` +
+	s := strings.Join([]string{`&pb.BlobMessage_FetchBlobManifest{` +
 		`FetchBlobManifest:` + fmt.Sprintf("%#v", this.FetchBlobManifest) + `}`}, ", ")
 	return s
 }
-func (this *Msg_SendBlobManifest) GoString() string {
+func (this *BlobMessage_SendBlobManifest) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&pb.Msg_SendBlobManifest{` +
+	s := strings.Join([]string{`&pb.BlobMessage_SendBlobManifest{` +
 		`SendBlobManifest:` + fmt.Sprintf("%#v", this.SendBlobManifest) + `}`}, ", ")
 	return s
 }
-func (this *Msg_FetchBlobChunk) GoString() string {
+func (this *BlobMessage_FetchBlobChunk) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&pb.Msg_FetchBlobChunk{` +
+	s := strings.Join([]string{`&pb.BlobMessage_FetchBlobChunk{` +
 		`FetchBlobChunk:` + fmt.Sprintf("%#v", this.FetchBlobChunk) + `}`}, ", ")
 	return s
 }
-func (this *Msg_SendBlobChunk) GoString() string {
+func (this *BlobMessage_SendBlobChunk) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&pb.Msg_SendBlobChunk{` +
+	s := strings.Join([]string{`&pb.BlobMessage_SendBlobChunk{` +
 		`SendBlobChunk:` + fmt.Sprintf("%#v", this.SendBlobChunk) + `}`}, ", ")
 	return s
 }
@@ -681,6 +1781,96 @@ func (this *SendBlobChunk) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
+func (this *HushMessage) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 8)
+	s = append(s, "&pb.HushMessage{")
+	if this.Payload != nil {
+		s = append(s, "Payload: "+fmt.Sprintf("%#v", this.Payload)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *HushMessage_DhPubkeyAttestations) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&pb.HushMessage_DhPubkeyAttestations{` +
+		`DhPubkeyAttestations:` + fmt.Sprintf("%#v", this.DhPubkeyAttestations) + `}`}, ", ")
+	return s
+}
+func (this *HushMessage_ProposeIndividualSession) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&pb.HushMessage_ProposeIndividualSession{` +
+		`ProposeIndividualSession:` + fmt.Sprintf("%#v", this.ProposeIndividualSession) + `}`}, ", ")
+	return s
+}
+func (this *HushMessage_ApproveIndividualSession) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&pb.HushMessage_ApproveIndividualSession{` +
+		`ApproveIndividualSession:` + fmt.Sprintf("%#v", this.ApproveIndividualSession) + `}`}, ", ")
+	return s
+}
+func (this *HushMessage_SendIndividualMessage) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&pb.HushMessage_SendIndividualMessage{` +
+		`SendIndividualMessage:` + fmt.Sprintf("%#v", this.SendIndividualMessage) + `}`}, ", ")
+	return s
+}
+func (this *HushDHPubkeyAttestations) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&pb.HushDHPubkeyAttestations{")
+	if this.Attestations != nil {
+		s = append(s, "Attestations: "+fmt.Sprintf("%#v", this.Attestations)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *HushProposeIndividualSession) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&pb.HushProposeIndividualSession{")
+	s = append(s, "EncryptedProposal: "+fmt.Sprintf("%#v", this.EncryptedProposal)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *HushApproveIndividualSession) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&pb.HushApproveIndividualSession{")
+	if this.Approval != nil {
+		s = append(s, "Approval: "+fmt.Sprintf("%#v", this.Approval)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *HushSendIndividualMessage) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&pb.HushSendIndividualMessage{")
+	if this.Message != nil {
+		s = append(s, "Message: "+fmt.Sprintf("%#v", this.Message)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
 func valueToGoStringLibp2P(v interface{}, typ string) string {
 	rv := reflect.ValueOf(v)
 	if rv.IsNil() {
@@ -689,7 +1879,7 @@ func valueToGoStringLibp2P(v interface{}, typ string) string {
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("func(v %v) *%v { return &v } ( %#v )", typ, typ, pv)
 }
-func (m *Msg) Marshal() (dAtA []byte, err error) {
+func (m *BlobMessage) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -699,21 +1889,21 @@ func (m *Msg) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *Msg) MarshalTo(dAtA []byte) (int, error) {
+func (m *BlobMessage) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *Msg) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *BlobMessage) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
 	_ = l
-	if m.Msg != nil {
+	if m.Payload != nil {
 		{
-			size := m.Msg.Size()
+			size := m.Payload.Size()
 			i -= size
-			if _, err := m.Msg.MarshalTo(dAtA[i:]); err != nil {
+			if _, err := m.Payload.MarshalTo(dAtA[i:]); err != nil {
 				return 0, err
 			}
 		}
@@ -721,12 +1911,12 @@ func (m *Msg) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func (m *Msg_FetchBlobManifest) MarshalTo(dAtA []byte) (int, error) {
+func (m *BlobMessage_FetchBlobManifest) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *Msg_FetchBlobManifest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *BlobMessage_FetchBlobManifest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.FetchBlobManifest != nil {
 		{
@@ -742,12 +1932,12 @@ func (m *Msg_FetchBlobManifest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	}
 	return len(dAtA) - i, nil
 }
-func (m *Msg_SendBlobManifest) MarshalTo(dAtA []byte) (int, error) {
+func (m *BlobMessage_SendBlobManifest) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *Msg_SendBlobManifest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *BlobMessage_SendBlobManifest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.SendBlobManifest != nil {
 		{
@@ -763,12 +1953,12 @@ func (m *Msg_SendBlobManifest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	}
 	return len(dAtA) - i, nil
 }
-func (m *Msg_FetchBlobChunk) MarshalTo(dAtA []byte) (int, error) {
+func (m *BlobMessage_FetchBlobChunk) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *Msg_FetchBlobChunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *BlobMessage_FetchBlobChunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.FetchBlobChunk != nil {
 		{
@@ -784,12 +1974,12 @@ func (m *Msg_FetchBlobChunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	}
 	return len(dAtA) - i, nil
 }
-func (m *Msg_SendBlobChunk) MarshalTo(dAtA []byte) (int, error) {
+func (m *BlobMessage_SendBlobChunk) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *Msg_SendBlobChunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *BlobMessage_SendBlobChunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	if m.SendBlobChunk != nil {
 		{
@@ -955,6 +2145,259 @@ func (m *SendBlobChunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *HushMessage) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *HushMessage) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *HushMessage) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Payload != nil {
+		{
+			size := m.Payload.Size()
+			i -= size
+			if _, err := m.Payload.MarshalTo(dAtA[i:]); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *HushMessage_DhPubkeyAttestations) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *HushMessage_DhPubkeyAttestations) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.DhPubkeyAttestations != nil {
+		{
+			size, err := m.DhPubkeyAttestations.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintLibp2P(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+func (m *HushMessage_ProposeIndividualSession) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *HushMessage_ProposeIndividualSession) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.ProposeIndividualSession != nil {
+		{
+			size, err := m.ProposeIndividualSession.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintLibp2P(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x12
+	}
+	return len(dAtA) - i, nil
+}
+func (m *HushMessage_ApproveIndividualSession) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *HushMessage_ApproveIndividualSession) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.ApproveIndividualSession != nil {
+		{
+			size, err := m.ApproveIndividualSession.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintLibp2P(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x1a
+	}
+	return len(dAtA) - i, nil
+}
+func (m *HushMessage_SendIndividualMessage) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *HushMessage_SendIndividualMessage) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.SendIndividualMessage != nil {
+		{
+			size, err := m.SendIndividualMessage.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintLibp2P(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x22
+	}
+	return len(dAtA) - i, nil
+}
+func (m *HushDHPubkeyAttestations) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *HushDHPubkeyAttestations) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *HushDHPubkeyAttestations) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Attestations) > 0 {
+		for iNdEx := len(m.Attestations) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Attestations[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintLibp2P(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *HushProposeIndividualSession) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *HushProposeIndividualSession) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *HushProposeIndividualSession) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.EncryptedProposal) > 0 {
+		i -= len(m.EncryptedProposal)
+		copy(dAtA[i:], m.EncryptedProposal)
+		i = encodeVarintLibp2P(dAtA, i, uint64(len(m.EncryptedProposal)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *HushApproveIndividualSession) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *HushApproveIndividualSession) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *HushApproveIndividualSession) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Approval != nil {
+		{
+			size, err := m.Approval.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintLibp2P(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *HushSendIndividualMessage) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *HushSendIndividualMessage) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *HushSendIndividualMessage) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Message != nil {
+		{
+			size, err := m.Message.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintLibp2P(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintLibp2P(dAtA []byte, offset int, v uint64) int {
 	offset -= sovLibp2P(v)
 	base := offset
@@ -966,19 +2409,259 @@ func encodeVarintLibp2P(dAtA []byte, offset int, v uint64) int {
 	dAtA[offset] = uint8(v)
 	return base
 }
-func (m *Msg) Size() (n int) {
+func NewPopulatedBlobMessage(r randyLibp2P, easy bool) *BlobMessage {
+	this := &BlobMessage{}
+	oneofNumber_Payload := []int32{1, 2, 3, 4}[r.Intn(4)]
+	switch oneofNumber_Payload {
+	case 1:
+		this.Payload = NewPopulatedBlobMessage_FetchBlobManifest(r, easy)
+	case 2:
+		this.Payload = NewPopulatedBlobMessage_SendBlobManifest(r, easy)
+	case 3:
+		this.Payload = NewPopulatedBlobMessage_FetchBlobChunk(r, easy)
+	case 4:
+		this.Payload = NewPopulatedBlobMessage_SendBlobChunk(r, easy)
+	}
+	if !easy && r.Intn(10) != 0 {
+	}
+	return this
+}
+
+func NewPopulatedBlobMessage_FetchBlobManifest(r randyLibp2P, easy bool) *BlobMessage_FetchBlobManifest {
+	this := &BlobMessage_FetchBlobManifest{}
+	this.FetchBlobManifest = NewPopulatedFetchBlobManifest(r, easy)
+	return this
+}
+func NewPopulatedBlobMessage_SendBlobManifest(r randyLibp2P, easy bool) *BlobMessage_SendBlobManifest {
+	this := &BlobMessage_SendBlobManifest{}
+	this.SendBlobManifest = NewPopulatedSendBlobManifest(r, easy)
+	return this
+}
+func NewPopulatedBlobMessage_FetchBlobChunk(r randyLibp2P, easy bool) *BlobMessage_FetchBlobChunk {
+	this := &BlobMessage_FetchBlobChunk{}
+	this.FetchBlobChunk = NewPopulatedFetchBlobChunk(r, easy)
+	return this
+}
+func NewPopulatedBlobMessage_SendBlobChunk(r randyLibp2P, easy bool) *BlobMessage_SendBlobChunk {
+	this := &BlobMessage_SendBlobChunk{}
+	this.SendBlobChunk = NewPopulatedSendBlobChunk(r, easy)
+	return this
+}
+func NewPopulatedFetchBlobManifest(r randyLibp2P, easy bool) *FetchBlobManifest {
+	this := &FetchBlobManifest{}
+	if r.Intn(5) != 0 {
+		this.Id = pb.NewPopulatedBlobID(r, easy)
+	}
+	if !easy && r.Intn(10) != 0 {
+	}
+	return this
+}
+
+func NewPopulatedSendBlobManifest(r randyLibp2P, easy bool) *SendBlobManifest {
+	this := &SendBlobManifest{}
+	if r.Intn(5) != 0 {
+		this.Manifest = pb.NewPopulatedManifest(r, easy)
+	}
+	this.Exists = bool(bool(r.Intn(2) == 0))
+	if !easy && r.Intn(10) != 0 {
+	}
+	return this
+}
+
+func NewPopulatedFetchBlobChunk(r randyLibp2P, easy bool) *FetchBlobChunk {
+	this := &FetchBlobChunk{}
+	v1 := r.Intn(100)
+	this.Sha3 = make([]byte, v1)
+	for i := 0; i < v1; i++ {
+		this.Sha3[i] = byte(r.Intn(256))
+	}
+	if !easy && r.Intn(10) != 0 {
+	}
+	return this
+}
+
+func NewPopulatedSendBlobChunk(r randyLibp2P, easy bool) *SendBlobChunk {
+	this := &SendBlobChunk{}
+	v2 := r.Intn(100)
+	this.Chunk = make([]byte, v2)
+	for i := 0; i < v2; i++ {
+		this.Chunk[i] = byte(r.Intn(256))
+	}
+	this.Exists = bool(bool(r.Intn(2) == 0))
+	if !easy && r.Intn(10) != 0 {
+	}
+	return this
+}
+
+func NewPopulatedHushMessage(r randyLibp2P, easy bool) *HushMessage {
+	this := &HushMessage{}
+	oneofNumber_Payload := []int32{1, 2, 3, 4}[r.Intn(4)]
+	switch oneofNumber_Payload {
+	case 1:
+		this.Payload = NewPopulatedHushMessage_DhPubkeyAttestations(r, easy)
+	case 2:
+		this.Payload = NewPopulatedHushMessage_ProposeIndividualSession(r, easy)
+	case 3:
+		this.Payload = NewPopulatedHushMessage_ApproveIndividualSession(r, easy)
+	case 4:
+		this.Payload = NewPopulatedHushMessage_SendIndividualMessage(r, easy)
+	}
+	if !easy && r.Intn(10) != 0 {
+	}
+	return this
+}
+
+func NewPopulatedHushMessage_DhPubkeyAttestations(r randyLibp2P, easy bool) *HushMessage_DhPubkeyAttestations {
+	this := &HushMessage_DhPubkeyAttestations{}
+	this.DhPubkeyAttestations = NewPopulatedHushDHPubkeyAttestations(r, easy)
+	return this
+}
+func NewPopulatedHushMessage_ProposeIndividualSession(r randyLibp2P, easy bool) *HushMessage_ProposeIndividualSession {
+	this := &HushMessage_ProposeIndividualSession{}
+	this.ProposeIndividualSession = NewPopulatedHushProposeIndividualSession(r, easy)
+	return this
+}
+func NewPopulatedHushMessage_ApproveIndividualSession(r randyLibp2P, easy bool) *HushMessage_ApproveIndividualSession {
+	this := &HushMessage_ApproveIndividualSession{}
+	this.ApproveIndividualSession = NewPopulatedHushApproveIndividualSession(r, easy)
+	return this
+}
+func NewPopulatedHushMessage_SendIndividualMessage(r randyLibp2P, easy bool) *HushMessage_SendIndividualMessage {
+	this := &HushMessage_SendIndividualMessage{}
+	this.SendIndividualMessage = NewPopulatedHushSendIndividualMessage(r, easy)
+	return this
+}
+func NewPopulatedHushDHPubkeyAttestations(r randyLibp2P, easy bool) *HushDHPubkeyAttestations {
+	this := &HushDHPubkeyAttestations{}
+	if r.Intn(5) != 0 {
+		v3 := r.Intn(5)
+		this.Attestations = make([]*pb1.DHPubkeyAttestation, v3)
+		for i := 0; i < v3; i++ {
+			this.Attestations[i] = pb1.NewPopulatedDHPubkeyAttestation(r, easy)
+		}
+	}
+	if !easy && r.Intn(10) != 0 {
+	}
+	return this
+}
+
+func NewPopulatedHushProposeIndividualSession(r randyLibp2P, easy bool) *HushProposeIndividualSession {
+	this := &HushProposeIndividualSession{}
+	v4 := r.Intn(100)
+	this.EncryptedProposal = make([]byte, v4)
+	for i := 0; i < v4; i++ {
+		this.EncryptedProposal[i] = byte(r.Intn(256))
+	}
+	if !easy && r.Intn(10) != 0 {
+	}
+	return this
+}
+
+func NewPopulatedHushApproveIndividualSession(r randyLibp2P, easy bool) *HushApproveIndividualSession {
+	this := &HushApproveIndividualSession{}
+	if r.Intn(5) != 0 {
+		this.Approval = pb1.NewPopulatedIndividualSessionApproval(r, easy)
+	}
+	if !easy && r.Intn(10) != 0 {
+	}
+	return this
+}
+
+func NewPopulatedHushSendIndividualMessage(r randyLibp2P, easy bool) *HushSendIndividualMessage {
+	this := &HushSendIndividualMessage{}
+	if r.Intn(5) != 0 {
+		this.Message = pb1.NewPopulatedIndividualMessage(r, easy)
+	}
+	if !easy && r.Intn(10) != 0 {
+	}
+	return this
+}
+
+type randyLibp2P interface {
+	Float32() float32
+	Float64() float64
+	Int63() int64
+	Int31() int32
+	Uint32() uint32
+	Intn(n int) int
+}
+
+func randUTF8RuneLibp2P(r randyLibp2P) rune {
+	ru := r.Intn(62)
+	if ru < 10 {
+		return rune(ru + 48)
+	} else if ru < 36 {
+		return rune(ru + 55)
+	}
+	return rune(ru + 61)
+}
+func randStringLibp2P(r randyLibp2P) string {
+	v5 := r.Intn(100)
+	tmps := make([]rune, v5)
+	for i := 0; i < v5; i++ {
+		tmps[i] = randUTF8RuneLibp2P(r)
+	}
+	return string(tmps)
+}
+func randUnrecognizedLibp2P(r randyLibp2P, maxFieldNumber int) (dAtA []byte) {
+	l := r.Intn(5)
+	for i := 0; i < l; i++ {
+		wire := r.Intn(4)
+		if wire == 3 {
+			wire = 5
+		}
+		fieldNumber := maxFieldNumber + r.Intn(100)
+		dAtA = randFieldLibp2P(dAtA, r, fieldNumber, wire)
+	}
+	return dAtA
+}
+func randFieldLibp2P(dAtA []byte, r randyLibp2P, fieldNumber int, wire int) []byte {
+	key := uint32(fieldNumber)<<3 | uint32(wire)
+	switch wire {
+	case 0:
+		dAtA = encodeVarintPopulateLibp2P(dAtA, uint64(key))
+		v6 := r.Int63()
+		if r.Intn(2) == 0 {
+			v6 *= -1
+		}
+		dAtA = encodeVarintPopulateLibp2P(dAtA, uint64(v6))
+	case 1:
+		dAtA = encodeVarintPopulateLibp2P(dAtA, uint64(key))
+		dAtA = append(dAtA, byte(r.Intn(256)), byte(r.Intn(256)), byte(r.Intn(256)), byte(r.Intn(256)), byte(r.Intn(256)), byte(r.Intn(256)), byte(r.Intn(256)), byte(r.Intn(256)))
+	case 2:
+		dAtA = encodeVarintPopulateLibp2P(dAtA, uint64(key))
+		ll := r.Intn(100)
+		dAtA = encodeVarintPopulateLibp2P(dAtA, uint64(ll))
+		for j := 0; j < ll; j++ {
+			dAtA = append(dAtA, byte(r.Intn(256)))
+		}
+	default:
+		dAtA = encodeVarintPopulateLibp2P(dAtA, uint64(key))
+		dAtA = append(dAtA, byte(r.Intn(256)), byte(r.Intn(256)), byte(r.Intn(256)), byte(r.Intn(256)))
+	}
+	return dAtA
+}
+func encodeVarintPopulateLibp2P(dAtA []byte, v uint64) []byte {
+	for v >= 1<<7 {
+		dAtA = append(dAtA, uint8(uint64(v)&0x7f|0x80))
+		v >>= 7
+	}
+	dAtA = append(dAtA, uint8(v))
+	return dAtA
+}
+func (m *BlobMessage) Size() (n int) {
 	if m == nil {
 		return 0
 	}
 	var l int
 	_ = l
-	if m.Msg != nil {
-		n += m.Msg.Size()
+	if m.Payload != nil {
+		n += m.Payload.Size()
 	}
 	return n
 }
 
-func (m *Msg_FetchBlobManifest) Size() (n int) {
+func (m *BlobMessage_FetchBlobManifest) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -990,7 +2673,7 @@ func (m *Msg_FetchBlobManifest) Size() (n int) {
 	}
 	return n
 }
-func (m *Msg_SendBlobManifest) Size() (n int) {
+func (m *BlobMessage_SendBlobManifest) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -1002,7 +2685,7 @@ func (m *Msg_SendBlobManifest) Size() (n int) {
 	}
 	return n
 }
-func (m *Msg_FetchBlobChunk) Size() (n int) {
+func (m *BlobMessage_FetchBlobChunk) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -1014,7 +2697,7 @@ func (m *Msg_FetchBlobChunk) Size() (n int) {
 	}
 	return n
 }
-func (m *Msg_SendBlobChunk) Size() (n int) {
+func (m *BlobMessage_SendBlobChunk) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -1084,57 +2767,171 @@ func (m *SendBlobChunk) Size() (n int) {
 	return n
 }
 
+func (m *HushMessage) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Payload != nil {
+		n += m.Payload.Size()
+	}
+	return n
+}
+
+func (m *HushMessage_DhPubkeyAttestations) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.DhPubkeyAttestations != nil {
+		l = m.DhPubkeyAttestations.Size()
+		n += 1 + l + sovLibp2P(uint64(l))
+	}
+	return n
+}
+func (m *HushMessage_ProposeIndividualSession) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.ProposeIndividualSession != nil {
+		l = m.ProposeIndividualSession.Size()
+		n += 1 + l + sovLibp2P(uint64(l))
+	}
+	return n
+}
+func (m *HushMessage_ApproveIndividualSession) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.ApproveIndividualSession != nil {
+		l = m.ApproveIndividualSession.Size()
+		n += 1 + l + sovLibp2P(uint64(l))
+	}
+	return n
+}
+func (m *HushMessage_SendIndividualMessage) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.SendIndividualMessage != nil {
+		l = m.SendIndividualMessage.Size()
+		n += 1 + l + sovLibp2P(uint64(l))
+	}
+	return n
+}
+func (m *HushDHPubkeyAttestations) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Attestations) > 0 {
+		for _, e := range m.Attestations {
+			l = e.Size()
+			n += 1 + l + sovLibp2P(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *HushProposeIndividualSession) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.EncryptedProposal)
+	if l > 0 {
+		n += 1 + l + sovLibp2P(uint64(l))
+	}
+	return n
+}
+
+func (m *HushApproveIndividualSession) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Approval != nil {
+		l = m.Approval.Size()
+		n += 1 + l + sovLibp2P(uint64(l))
+	}
+	return n
+}
+
+func (m *HushSendIndividualMessage) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Message != nil {
+		l = m.Message.Size()
+		n += 1 + l + sovLibp2P(uint64(l))
+	}
+	return n
+}
+
 func sovLibp2P(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
 func sozLibp2P(x uint64) (n int) {
 	return sovLibp2P(uint64((x << 1) ^ uint64((int64(x) >> 63))))
 }
-func (this *Msg) String() string {
+func (this *BlobMessage) String() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&Msg{`,
-		`Msg:` + fmt.Sprintf("%v", this.Msg) + `,`,
+	s := strings.Join([]string{`&BlobMessage{`,
+		`Payload:` + fmt.Sprintf("%v", this.Payload) + `,`,
 		`}`,
 	}, "")
 	return s
 }
-func (this *Msg_FetchBlobManifest) String() string {
+func (this *BlobMessage_FetchBlobManifest) String() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&Msg_FetchBlobManifest{`,
+	s := strings.Join([]string{`&BlobMessage_FetchBlobManifest{`,
 		`FetchBlobManifest:` + strings.Replace(fmt.Sprintf("%v", this.FetchBlobManifest), "FetchBlobManifest", "FetchBlobManifest", 1) + `,`,
 		`}`,
 	}, "")
 	return s
 }
-func (this *Msg_SendBlobManifest) String() string {
+func (this *BlobMessage_SendBlobManifest) String() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&Msg_SendBlobManifest{`,
+	s := strings.Join([]string{`&BlobMessage_SendBlobManifest{`,
 		`SendBlobManifest:` + strings.Replace(fmt.Sprintf("%v", this.SendBlobManifest), "SendBlobManifest", "SendBlobManifest", 1) + `,`,
 		`}`,
 	}, "")
 	return s
 }
-func (this *Msg_FetchBlobChunk) String() string {
+func (this *BlobMessage_FetchBlobChunk) String() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&Msg_FetchBlobChunk{`,
+	s := strings.Join([]string{`&BlobMessage_FetchBlobChunk{`,
 		`FetchBlobChunk:` + strings.Replace(fmt.Sprintf("%v", this.FetchBlobChunk), "FetchBlobChunk", "FetchBlobChunk", 1) + `,`,
 		`}`,
 	}, "")
 	return s
 }
-func (this *Msg_SendBlobChunk) String() string {
+func (this *BlobMessage_SendBlobChunk) String() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&Msg_SendBlobChunk{`,
+	s := strings.Join([]string{`&BlobMessage_SendBlobChunk{`,
 		`SendBlobChunk:` + strings.Replace(fmt.Sprintf("%v", this.SendBlobChunk), "SendBlobChunk", "SendBlobChunk", 1) + `,`,
 		`}`,
 	}, "")
@@ -1182,6 +2979,101 @@ func (this *SendBlobChunk) String() string {
 	}, "")
 	return s
 }
+func (this *HushMessage) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&HushMessage{`,
+		`Payload:` + fmt.Sprintf("%v", this.Payload) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *HushMessage_DhPubkeyAttestations) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&HushMessage_DhPubkeyAttestations{`,
+		`DhPubkeyAttestations:` + strings.Replace(fmt.Sprintf("%v", this.DhPubkeyAttestations), "HushDHPubkeyAttestations", "HushDHPubkeyAttestations", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *HushMessage_ProposeIndividualSession) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&HushMessage_ProposeIndividualSession{`,
+		`ProposeIndividualSession:` + strings.Replace(fmt.Sprintf("%v", this.ProposeIndividualSession), "HushProposeIndividualSession", "HushProposeIndividualSession", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *HushMessage_ApproveIndividualSession) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&HushMessage_ApproveIndividualSession{`,
+		`ApproveIndividualSession:` + strings.Replace(fmt.Sprintf("%v", this.ApproveIndividualSession), "HushApproveIndividualSession", "HushApproveIndividualSession", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *HushMessage_SendIndividualMessage) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&HushMessage_SendIndividualMessage{`,
+		`SendIndividualMessage:` + strings.Replace(fmt.Sprintf("%v", this.SendIndividualMessage), "HushSendIndividualMessage", "HushSendIndividualMessage", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *HushDHPubkeyAttestations) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForAttestations := "[]*DHPubkeyAttestation{"
+	for _, f := range this.Attestations {
+		repeatedStringForAttestations += strings.Replace(fmt.Sprintf("%v", f), "DHPubkeyAttestation", "pb1.DHPubkeyAttestation", 1) + ","
+	}
+	repeatedStringForAttestations += "}"
+	s := strings.Join([]string{`&HushDHPubkeyAttestations{`,
+		`Attestations:` + repeatedStringForAttestations + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *HushProposeIndividualSession) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&HushProposeIndividualSession{`,
+		`EncryptedProposal:` + fmt.Sprintf("%v", this.EncryptedProposal) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *HushApproveIndividualSession) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&HushApproveIndividualSession{`,
+		`Approval:` + strings.Replace(fmt.Sprintf("%v", this.Approval), "IndividualSessionApproval", "pb1.IndividualSessionApproval", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *HushSendIndividualMessage) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&HushSendIndividualMessage{`,
+		`Message:` + strings.Replace(fmt.Sprintf("%v", this.Message), "IndividualMessage", "pb1.IndividualMessage", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
 func valueToStringLibp2P(v interface{}) string {
 	rv := reflect.ValueOf(v)
 	if rv.IsNil() {
@@ -1190,7 +3082,7 @@ func valueToStringLibp2P(v interface{}) string {
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("*%v", pv)
 }
-func (m *Msg) Unmarshal(dAtA []byte) error {
+func (m *BlobMessage) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1213,10 +3105,10 @@ func (m *Msg) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: Msg: wiretype end group for non-group")
+			return fmt.Errorf("proto: BlobMessage: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: Msg: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: BlobMessage: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -1252,7 +3144,7 @@ func (m *Msg) Unmarshal(dAtA []byte) error {
 			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
-			m.Msg = &Msg_FetchBlobManifest{v}
+			m.Payload = &BlobMessage_FetchBlobManifest{v}
 			iNdEx = postIndex
 		case 2:
 			if wireType != 2 {
@@ -1287,7 +3179,7 @@ func (m *Msg) Unmarshal(dAtA []byte) error {
 			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
-			m.Msg = &Msg_SendBlobManifest{v}
+			m.Payload = &BlobMessage_SendBlobManifest{v}
 			iNdEx = postIndex
 		case 3:
 			if wireType != 2 {
@@ -1322,7 +3214,7 @@ func (m *Msg) Unmarshal(dAtA []byte) error {
 			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
-			m.Msg = &Msg_FetchBlobChunk{v}
+			m.Payload = &BlobMessage_FetchBlobChunk{v}
 			iNdEx = postIndex
 		case 4:
 			if wireType != 2 {
@@ -1357,7 +3249,7 @@ func (m *Msg) Unmarshal(dAtA []byte) error {
 			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
-			m.Msg = &Msg_SendBlobChunk{v}
+			m.Payload = &BlobMessage_SendBlobChunk{v}
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
@@ -1739,6 +3631,536 @@ func (m *SendBlobChunk) Unmarshal(dAtA []byte) error {
 				}
 			}
 			m.Exists = bool(v != 0)
+		default:
+			iNdEx = preIndex
+			skippy, err := skipLibp2P(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthLibp2P
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *HushMessage) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowLibp2P
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: HushMessage: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: HushMessage: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field DhPubkeyAttestations", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowLibp2P
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthLibp2P
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthLibp2P
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &HushDHPubkeyAttestations{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Payload = &HushMessage_DhPubkeyAttestations{v}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ProposeIndividualSession", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowLibp2P
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthLibp2P
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthLibp2P
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &HushProposeIndividualSession{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Payload = &HushMessage_ProposeIndividualSession{v}
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ApproveIndividualSession", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowLibp2P
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthLibp2P
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthLibp2P
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &HushApproveIndividualSession{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Payload = &HushMessage_ApproveIndividualSession{v}
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SendIndividualMessage", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowLibp2P
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthLibp2P
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthLibp2P
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &HushSendIndividualMessage{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Payload = &HushMessage_SendIndividualMessage{v}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipLibp2P(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthLibp2P
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *HushDHPubkeyAttestations) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowLibp2P
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: HushDHPubkeyAttestations: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: HushDHPubkeyAttestations: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Attestations", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowLibp2P
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthLibp2P
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthLibp2P
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Attestations = append(m.Attestations, &pb1.DHPubkeyAttestation{})
+			if err := m.Attestations[len(m.Attestations)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipLibp2P(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthLibp2P
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *HushProposeIndividualSession) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowLibp2P
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: HushProposeIndividualSession: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: HushProposeIndividualSession: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field EncryptedProposal", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowLibp2P
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthLibp2P
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthLibp2P
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.EncryptedProposal = append(m.EncryptedProposal[:0], dAtA[iNdEx:postIndex]...)
+			if m.EncryptedProposal == nil {
+				m.EncryptedProposal = []byte{}
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipLibp2P(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthLibp2P
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *HushApproveIndividualSession) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowLibp2P
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: HushApproveIndividualSession: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: HushApproveIndividualSession: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Approval", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowLibp2P
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthLibp2P
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthLibp2P
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Approval == nil {
+				m.Approval = &pb1.IndividualSessionApproval{}
+			}
+			if err := m.Approval.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipLibp2P(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthLibp2P
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *HushSendIndividualMessage) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowLibp2P
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: HushSendIndividualMessage: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: HushSendIndividualMessage: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Message", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowLibp2P
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthLibp2P
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthLibp2P
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Message == nil {
+				m.Message = &pb1.IndividualMessage{}
+			}
+			if err := m.Message.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipLibp2P(dAtA[iNdEx:])

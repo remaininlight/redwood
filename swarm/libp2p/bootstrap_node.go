@@ -135,7 +135,7 @@ func (bn *bootstrapNode) Start() error {
 		libp2p.NATPortMap(),
 		libp2p.EnableNATService(),
 		// libp2p.DefaultStaticRelays(),
-		libp2p.EnableRelay(circuitp2p.OptHop),
+		libp2p.EnableRelay(circuitp2p.OptActive, circuitp2p.OptHop),
 		libp2p.EnableAutoRelay(),
 		libp2p.Peerstore(bn.peerstore),
 		libp2p.ForceReachabilityPublic(),

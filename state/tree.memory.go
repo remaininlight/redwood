@@ -678,6 +678,14 @@ func (n *MemoryNode) Delete(keypath Keypath, rng *Range) error {
 	return nil
 }
 
+func (node *MemoryNode) IndexOfMapSubkey(rootKeypath Keypath, subkey Keypath) (uint64, error) {
+	panic("unimplemented")
+}
+
+func (node *MemoryNode) NthMapSubkey(rootKeypath Keypath, n uint64) (Keypath, error) {
+	panic("unimplemented")
+}
+
 func (n *MemoryNode) Diff() *Diff {
 	return n.diff
 }
@@ -808,6 +816,10 @@ func (iter *memoryIterator) SeekTo(keypath Keypath) {
 	}
 }
 
+func (iter *memoryIterator) seekTo(absKeypath Keypath) {
+	panic("unimplemented")
+}
+
 func (iter *memoryIterator) Node() Node {
 	if iter.done || iter.noItems() {
 		return nil
@@ -912,6 +924,10 @@ func (iter *memoryDepthFirstIterator) SeekTo(keypath Keypath) {
 	} else {
 		iter.done = true
 	}
+}
+
+func (iter *memoryDepthFirstIterator) seekTo(absKeypath Keypath) {
+	panic("unimplemented")
 }
 
 func (iter *memoryDepthFirstIterator) Valid() bool {

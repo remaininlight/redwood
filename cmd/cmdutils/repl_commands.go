@@ -41,6 +41,19 @@ var (
 		},
 	}
 
+	CmdAddress = REPLCommand{
+		"address",
+		"show your address",
+		func(args []string, app *App) error {
+			identity, err := app.KeyStore.DefaultPublicIdentity()
+			if err != nil {
+				return err
+			}
+			app.Debugf("address: %v", identity.Address())
+			return nil
+		},
+	}
+
 	CmdLibp2pPeerID = REPLCommand{
 		"libp2pid",
 		"show your libp2p peer ID",
@@ -318,6 +331,33 @@ var (
 				}
 			}
 			app.PeerStore.RemovePeers(toDelete)
+			return nil
+		},
+	}
+
+	CmdHushSendIndividualMessage = REPLCommand{
+		"hushmsg",
+		"send a 1:1 Hush message",
+		func(args []string, app *App) error {
+			if len(args) < 2 {
+				return errors.New("requires 2 arguments: hushmsg <recipient address> <message>")
+			}
+
+			recipient, err := types.AddressFromHex(args[0])
+			if err != nil {
+				return err
+			}
+			msg := strings.Join(args[1:], " ")
+
+			return app.HushProto.EnqueueIndividualMessage("foo", recipient, []byte(msg))
+		},
+	}
+
+	CmdHushStoreDebugPrint = REPLCommand{
+		"hushstore",
+		"print the contents of the protohush store",
+		func(args []string, app *App) error {
+			app.HushProtoStore.DebugPrint()
 			return nil
 		},
 	}

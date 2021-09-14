@@ -11,6 +11,7 @@ var (
 	ErrNodeEncoding      = errors.New("corrupted encoding for node")
 	ErrInvalidRange      = errors.New("invalid range")
 	ErrRangeOverNonSlice = errors.New("range over non-slice")
+	ErrNilKeypath        = errors.New("nil keypath")
 )
 
 var (
@@ -26,6 +27,8 @@ type Node interface {
 	Length() (uint64, error)
 	Subkeys() []Keypath
 	NumSubkeys() uint64
+	IndexOfMapSubkey(rootKeypath Keypath, subkey Keypath) (uint64, error)
+	// NthMapSubkey(rootKeypath Keypath, n uint64) (Keypath, error)
 	Exists(keypath Keypath) (bool, error)
 	NodeAt(keypath Keypath, rng *Range) Node
 	ParentNodeFor(keypath Keypath) (Node, Keypath)
@@ -161,11 +164,13 @@ func (rng *Range) IndicesForLength(length uint64) (uint64, uint64) {
 type Iterator interface {
 	RootKeypath() Keypath
 	Rewind()
-	SeekTo(keypath Keypath)
+	SeekTo(relKeypath Keypath)
 	Valid() bool
 	Next()
 	Node() Node
 	Close()
+
+	seekTo(absKeypath Keypath)
 }
 
 type Diff struct {

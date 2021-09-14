@@ -5,6 +5,7 @@ option go_package = "redwood.dev/swarm/libp2p/pb";
 
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 import "blob/pb/blob.proto";
+import "swarm/protohush/pb/hush.proto";
 
 option (gogoproto.gostring_all) = true;
 option (gogoproto.equal_all) = true;
@@ -18,8 +19,8 @@ option (gogoproto.marshaler_all) = true;
 option (gogoproto.sizer_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
-message Msg {
-    oneof msg {
+message BlobMessage {
+    oneof payload {
         FetchBlobManifest fetchBlobManifest = 1;
         SendBlobManifest sendBlobManifest = 2;
         FetchBlobChunk fetchBlobChunk = 3;
@@ -44,3 +45,29 @@ message SendBlobChunk {
     bytes chunk = 1;
     bool exists = 2;
 }
+
+message HushMessage {
+    oneof payload {
+        HushDHPubkeyAttestations dhPubkeyAttestations = 1;
+        HushProposeIndividualSession proposeIndividualSession = 2;
+        HushApproveIndividualSession approveIndividualSession = 3;
+        HushSendIndividualMessage sendIndividualMessage = 4;
+    }
+}
+
+message HushDHPubkeyAttestations {
+    repeated Redwood.swarm.protohush.DHPubkeyAttestation attestations = 1;
+}
+
+message HushProposeIndividualSession {
+    bytes encryptedProposal = 1;
+}
+
+message HushApproveIndividualSession {
+    Redwood.swarm.protohush.IndividualSessionApproval approval = 1;
+}
+
+message HushSendIndividualMessage {
+    Redwood.swarm.protohush.IndividualMessage message = 1;
+}
+

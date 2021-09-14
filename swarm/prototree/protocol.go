@@ -867,7 +867,7 @@ func NewAnnounceP2PStateURIsTask(
 }
 
 func (t *announceP2PStateURIsTask) announceP2PStateURIs(ctx context.Context) {
-	t.Debugf("announcing p2p state URIs")
+	// t.Debugf("announcing p2p state URIs")
 
 	stateURIs, err := t.txStore.KnownStateURIs()
 	if err != nil {
