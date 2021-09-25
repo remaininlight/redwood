@@ -149,7 +149,7 @@ func (hp *hushProtocol) Start() error {
 		return err
 	}
 
-	hp.handleIncomingIndividualSessionsTask = NewHandleIncomingIndividualSessionsTask(10*time.Second, hp.store, hp.peerStore, hp.keyStore, hp.transports)
+	hp.handleIncomingIndividualSessionsTask = NewHandleIncomingIndividualSessionsTask(10*time.Second, hp)
 	err = hp.Process.SpawnChild(nil, hp.handleIncomingIndividualSessionsTask)
 	if err != nil {
 		return err
@@ -921,7 +921,7 @@ func (t *handleIncomingIndividualSessionsTask) validateProposal(sender types.Add
 
 func (t *handleIncomingIndividualSessionsTask) proposeReplacementSession(myAddr types.Address, proposal EncryptedIndividualSessionProposal, proposedSession IndividualSessionProposal) {
 	var replacementSessionID IndividualSessionID
-	_, err := t.store.LatestIndividualSessionWithUsers(proposedSession.SessionID.SessionType, myAddr, proposal.AliceAddr)
+	_, err := t.hushProto.store.LatestIndividualSessionWithUsers(proposedSession.SessionID.SessionType, myAddr, proposal.AliceAddr)
 	if errors.Cause(err) == types.Err404 {
 		replacementSessionID = IndividualSessionID{
 			SessionType: proposedSession.SessionID.SessionType,
@@ -943,7 +943,7 @@ func (t *handleIncomingIndividualSessionsTask) proposeReplacementSession(myAddr 
 		}
 	}
 
-	bobDHPubkeyAttestation, err := t.store.LatestDHPubkeyFor(proposal.AliceAddr)
+	bobDHPubkeyAttestation, err := t.hushProto.store.LatestDHPubkeyFor(proposal.AliceAddr)
 	if err != nil {
 		t.Errorf("while fetching DH pubkey for %v from database: %v", proposal.AliceAddr, err)
 		return
@@ -976,13 +976,13 @@ func (t *handleIncomingIndividualSessionsTask) proposeReplacementSession(myAddr 
 	}
 	replacementSession.AliceSig = aliceSig
 
-	err = t.store.SaveOutgoingIndividualSessionProposal(replacementSession)
+	err = t.hushProto.store.SaveOutgoingIndividualSessionProposal(replacementSession)
 	if err != nil {
 		t.Errorf("while suggesting next session ID: %v", err)
 		return
 	}
 
-	err = t.store.DeleteIncomingIndividualSessionProposal(proposal)
+	err = t.hushProto.store.DeleteIncomingIndividualSessionProposal(proposal)
 	if err != nil {
 		t.Errorf("while deleting incoming individual session proposal: %v", err)
 		return
