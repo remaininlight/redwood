@@ -3,7 +3,6 @@ package types
 import (
 	"bytes"
 	"encoding/hex"
-	"encoding/json"
 	"math/rand"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -139,11 +138,24 @@ func (a *Address) Unmarshal(data []byte) error {
 	return nil
 }
 
-func (a *Address) Size() int                       { return len(*a) }
-func (a Address) MarshalJSON() ([]byte, error)     { return json.Marshal(a) }
-func (a *Address) UnmarshalJSON(data []byte) error { return json.Unmarshal(data, a) }
-func (a Address) Compare(other Address) int        { return bytes.Compare(a[:], other[:]) }
-func (a Address) Equal(other Address) bool         { return bytes.Equal(a[:], other[:]) }
+func (a *Address) Size() int { return len(*a) }
+func (a Address) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + a.Hex() + `"`), nil
+}
+func (a *Address) UnmarshalJSON(data []byte) error {
+	if len(data) < 3 {
+		*a = Address{}
+		return nil
+	}
+	bs, err := hex.DecodeString(string(data[1 : len(data)-1]))
+	if err != nil {
+		return err
+	}
+	*a = AddressFromBytes(bs)
+	return nil
+}
+func (a Address) Compare(other Address) int { return bytes.Compare(a[:], other[:]) }
+func (a Address) Equal(other Address) bool  { return bytes.Equal(a[:], other[:]) }
 
 func OverlappingAddresses(one, two []Address) []Address {
 	var overlap []Address

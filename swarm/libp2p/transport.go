@@ -1062,7 +1062,7 @@ func (t *connectToStaticRelaysTask) connectToStaticRelays(ctx context.Context) {
 		chDone := t.Process.Go(nil, "relay "+relay.ID.Pretty(), func(ctx context.Context) {
 			err := t.libp2pHost.Connect(ctx, relay)
 			if err != nil {
-				t.Errorf("error connecting to static relay (%v): %v", relay.ID, err)
+				// t.Errorf("error connecting to static relay (%v): %v", relay.ID, err)
 			}
 		})
 		chDones = append(chDones, chDone)

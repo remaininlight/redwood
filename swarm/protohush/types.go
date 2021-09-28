@@ -27,6 +27,10 @@ type EncryptedIndividualSessionProposal struct {
 	EncryptedProposal []byte        `tree:"encryptedProposal"`
 }
 
+func (p EncryptedIndividualSessionProposal) Hash() types.Hash {
+	return types.HashBytes(append(p.AliceAddr.Bytes(), p.EncryptedProposal...))
+}
+
 type IndividualMessageIntent struct {
 	ID          types.ID      `tree:"id"`
 	SessionType string        `tree:"sessionType"`

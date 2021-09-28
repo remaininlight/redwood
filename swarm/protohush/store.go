@@ -4,6 +4,7 @@ import (
 	"github.com/status-im/doubleratchet"
 
 	"redwood.dev/types"
+	"redwood.dev/utils"
 )
 
 type Store interface {
@@ -14,17 +15,22 @@ type Store interface {
 	SaveDHPubkeyAttestations(attestations []DHPubkeyAttestation) error
 
 	// Individual session handshake protocol
-	OutgoingIndividualSessionProposals() (map[types.Hash]IndividualSessionProposal, error)
+	// OutgoingIndividualSessionProposals() (map[types.Hash]IndividualSessionProposal, error)
+	OutgoingIndividualSessionProposalHashes() (utils.HashSet, error)
 	OutgoingIndividualSessionProposalByHash(proposalHash types.Hash) (IndividualSessionProposal, error)
+	OutgoingIndividualSessionProposalsForUsers(aliceAddr, bobAddr types.Address) ([]IndividualSessionProposal, error)
 	OutgoingIndividualSessionProposalByUsersAndType(sessionType string, aliceAddr, bobAddr types.Address) (IndividualSessionProposal, error)
 	SaveOutgoingIndividualSessionProposal(proposal IndividualSessionProposal) error
 	DeleteOutgoingIndividualSessionProposal(sessionHash types.Hash) error
 
 	IncomingIndividualSessionProposals() (map[types.Hash]EncryptedIndividualSessionProposal, error)
-	SaveIncomingIndividualSessionProposal(encryptedProposal EncryptedIndividualSessionProposal) error
+	IncomingIndividualSessionProposal(hash types.Hash) (EncryptedIndividualSessionProposal, error)
+	SaveIncomingIndividualSessionProposal(proposal EncryptedIndividualSessionProposal) error
 	DeleteIncomingIndividualSessionProposal(proposal EncryptedIndividualSessionProposal) error
 
 	OutgoingIndividualSessionApprovals() (map[types.Address]map[types.Hash]IndividualSessionApproval, error)
+	OutgoingIndividualSessionApprovalsForUser(aliceAddr types.Address) ([]IndividualSessionApproval, error)
+	OutgoingIndividualSessionApproval(aliceAddr types.Address, proposalHash types.Hash) (IndividualSessionApproval, error)
 	SaveOutgoingIndividualSessionApproval(sender types.Address, approval IndividualSessionApproval) error
 	DeleteOutgoingIndividualSessionApproval(aliceAddr types.Address, proposalHash types.Hash) error
 
@@ -36,6 +42,8 @@ type Store interface {
 
 	// Individual messages
 	OutgoingIndividualMessageIntents() ([]IndividualMessageIntent, error)
+	OutgoingIndividualMessageIntentIDsForTypeAndRecipient(sessionType string, recipient types.Address) (utils.IDSet, error)
+	OutgoingIndividualMessageIntent(sessionType string, recipient types.Address, id types.ID) (IndividualMessageIntent, error)
 	SaveOutgoingIndividualMessageIntent(intent IndividualMessageIntent) error
 	DeleteOutgoingIndividualMessageIntent(intent IndividualMessageIntent) error
 
