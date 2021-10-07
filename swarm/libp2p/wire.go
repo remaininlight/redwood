@@ -105,14 +105,6 @@ func (msg *Msg) UnmarshalJSON(bs []byte) error {
 		}
 		msg.Payload = tx
 
-	case msgType_Ack:
-		var payload ackMsg
-		err := json.Unmarshal(m.PayloadBytes, &payload)
-		if err != nil {
-			return err
-		}
-		msg.Payload = payload
-
 	case msgType_EncryptedTx:
 		var ep prototree.EncryptedTx
 		err := json.Unmarshal(m.PayloadBytes, &ep)
@@ -120,6 +112,14 @@ func (msg *Msg) UnmarshalJSON(bs []byte) error {
 			return err
 		}
 		msg.Payload = ep
+
+	case msgType_Ack:
+		var payload ackMsg
+		err := json.Unmarshal(m.PayloadBytes, &payload)
+		if err != nil {
+			return err
+		}
+		msg.Payload = payload
 
 	case msgType_AnnounceP2PStateURI:
 		stateURI := string(m.PayloadBytes)

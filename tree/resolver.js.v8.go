@@ -80,9 +80,14 @@ func (r *jsResolver) ResolveState(node state.Node, blobStore blob.Store, sender 
 
 	convertedPatches := make([]interface{}, len(patches))
 	for i, patch := range patches {
+		val, err := patch.Value()
+		if err != nil {
+			return err
+		}
+
 		convertedPatch := map[string]interface{}{
 			"keys": patch.Keypath.PartStrings(),
-			"val":  patch.Val,
+			"val":  val,
 		}
 
 		if patch.Range != nil {

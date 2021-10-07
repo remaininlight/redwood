@@ -8,10 +8,10 @@ type TxStore interface {
 	Start() error
 	Close()
 
-	AddTx(tx *Tx) error
+	AddTx(tx Tx) error
 	RemoveTx(stateURI string, txID types.ID) error
 	TxExists(stateURI string, txID types.ID) (bool, error)
-	FetchTx(stateURI string, txID types.ID) (*Tx, error)
+	FetchTx(stateURI string, txID types.ID) (Tx, error)
 	AllTxsForStateURI(stateURI string, fromTxID types.ID) TxIterator
 	KnownStateURIs() ([]string, error)
 	MarkLeaf(stateURI string, txID types.ID) error
@@ -21,27 +21,34 @@ type TxStore interface {
 
 type TxIterator interface {
 	Next() *Tx
-	Cancel()
+	Close()
 	Error() error
 }
 
 type txIterator struct {
-	ch       chan *Tx
-	chCancel chan struct{}
-	err      error
+	ch      chan *Tx
+	chClose chan struct{}
+	err     error
+}
+
+func NewTxIterator() *txIterator {
+	return &txIterator{
+		ch:      make(chan *Tx),
+		chClose: make(chan struct{}),
+	}
 }
 
 func (i *txIterator) Next() *Tx {
 	select {
 	case tx := <-i.ch:
 		return tx
-	case <-i.chCancel:
+	case <-i.chClose:
 		return nil
 	}
 }
 
-func (i *txIterator) Cancel() {
-	close(i.chCancel)
+func (i *txIterator) Close() {
+	close(i.chClose)
 }
 
 func (i *txIterator) Error() error {

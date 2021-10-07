@@ -3,7 +3,6 @@ package braidhttp
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -12,9 +11,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"redwood.dev/crypto"
 	"redwood.dev/swarm"
-	"redwood.dev/swarm/prototree"
 	"redwood.dev/tree"
 	"redwood.dev/types"
 )
@@ -71,46 +68,12 @@ func parseIndexParams(r *http.Request) (string, string) {
 // public, the `senderEncKeypair` and `recipientEncPubkey` parameters may be nil.
 func putRequestFromTx(
 	requestContext context.Context,
-	tx *tree.Tx,
+	tx tree.Tx,
 	dialAddr string,
-	senderEncKeypair *crypto.AsymEncKeypair,
-	recipientAddress types.Address,
-	recipientEncPubkey crypto.AsymEncPubkey,
+	// senderEncKeypair *crypto.AsymEncKeypair,
+	// recipientAddress types.Address,
+	// recipientEncPubkey crypto.AsymEncPubkey,
 ) (*http.Request, error) {
-	if tx.IsPrivate() {
-		if recipientEncPubkey == nil {
-			return nil, errors.New("no encrypting pubkey provided")
-		}
-
-		marshalledTx, err := json.Marshal(tx)
-		if err != nil {
-			return nil, errors.WithStack(err)
-		}
-
-		encryptedTxBytes, err := senderEncKeypair.SealMessageFor(recipientEncPubkey, marshalledTx)
-		if err != nil {
-			return nil, errors.WithStack(err)
-		}
-
-		msg, err := json.Marshal(prototree.EncryptedTx{
-			TxID:             tx.ID,
-			EncryptedPayload: encryptedTxBytes,
-			SenderPublicKey:  senderEncKeypair.AsymEncPubkey.Bytes(),
-			RecipientAddress: recipientAddress,
-		})
-		if err != nil {
-			return nil, errors.WithStack(err)
-		}
-
-		req, err := http.NewRequestWithContext(requestContext, "PUT", dialAddr, bytes.NewReader(msg))
-		if err != nil {
-			return nil, errors.WithStack(err)
-		}
-		req.Header.Set("Private", "true")
-
-		return req, nil
-	}
-
 	var parentStrs []string
 	for _, parent := range tx.Parents {
 		parentStrs = append(parentStrs, parent.Hex())
@@ -139,6 +102,7 @@ func putRequestFromTx(
 	return req, nil
 }
 
-func deviceUniqueID(sessionID types.ID) string {
+func deviceUniqueID(dialInfo swarm.PeerDialInfo, sessionID types.ID) string {
 	return sessionID.Hex()
+	// return dialInfo.String()
 }

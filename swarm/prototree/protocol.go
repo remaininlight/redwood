@@ -2,6 +2,7 @@ package prototree
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,9 +13,9 @@ import (
 	"redwood.dev/process"
 	"redwood.dev/state"
 	"redwood.dev/swarm"
+	"redwood.dev/swarm/protohush"
 	"redwood.dev/tree"
 	"redwood.dev/types"
-	"redwood.dev/utils"
 )
 
 //go:generate mockery --name TreeProtocol --output ./mocks/ --case=underscore
@@ -32,6 +33,7 @@ type TreeTransport interface {
 	swarm.Transport
 	ProvidersOfStateURI(ctx context.Context, stateURI string) (<-chan TreePeerConn, error)
 	OnTxReceived(handler TxReceivedCallback)
+	OnPrivateTxReceived(handler PrivateTxReceivedCallback)
 	OnAckReceived(handler AckReceivedCallback)
 	OnWritableSubscriptionOpened(handler WritableSubscriptionOpenedCallback)
 	OnP2PStateURIReceived(handler P2PStateURIReceivedCallback)
@@ -41,7 +43,8 @@ type TreeTransport interface {
 type TreePeerConn interface {
 	swarm.PeerConn
 	Subscribe(ctx context.Context, stateURI string) (ReadableSubscription, error)
-	Put(ctx context.Context, tx *tree.Tx, state state.Node, leaves []types.ID) error
+	SendTx(ctx context.Context, tx tree.Tx) error
+	SendPrivateTx(ctx context.Context, encryptedTx EncryptedTx) (err error)
 	Ack(stateURI string, txID types.ID) error
 	AnnounceP2PStateURI(ctx context.Context, stateURI string) error
 }
@@ -58,13 +61,17 @@ type treeProtocol struct {
 	keyStore      identity.KeyStore
 	peerStore     swarm.PeerStore
 
+	hushProto protohush.HushProtocol
+
+	acl ACL
+
 	readableSubscriptions   map[string]*multiReaderSubscription // map[stateURI]
 	readableSubscriptionsMu sync.RWMutex
 	writableSubscriptions   map[string]map[WritableSubscription]struct{} // map[stateURI]
 	writableSubscriptionsMu sync.RWMutex
 
-	broadcastTxsToStateURIProvidersTask *broadcastTxsToStateURIProvidersTask
-	announceP2PStateURIsTask            *announceP2PStateURIsTask
+	// broadcastTxsToStateURIProvidersTask *broadcastTxsToStateURIProvidersTask
+	announceP2PStateURIsTask *announceP2PStateURIsTask
 }
 
 var (
@@ -74,6 +81,7 @@ var (
 
 func NewTreeProtocol(
 	transports []swarm.Transport,
+	hushProto protohush.HushProtocol,
 	controllerHub tree.ControllerHub,
 	txStore tree.TxStore,
 	keyStore identity.KeyStore,
@@ -87,19 +95,23 @@ func NewTreeProtocol(
 		}
 	}
 	tp := &treeProtocol{
-		Process:               *process.New("TreeProtocol"),
-		Logger:                log.NewLogger("tree proto"),
-		store:                 store,
-		transports:            transportsMap,
-		controllerHub:         controllerHub,
-		txStore:               txStore,
-		keyStore:              keyStore,
-		peerStore:             peerStore,
+		Process:       *process.New(ProtocolName),
+		Logger:        log.NewLogger(ProtocolName),
+		hushProto:     hushProto,
+		store:         store,
+		transports:    transportsMap,
+		controllerHub: controllerHub,
+		txStore:       txStore,
+		keyStore:      keyStore,
+		peerStore:     peerStore,
+
+		acl: DefaultACL{ControllerHub: controllerHub},
+
 		readableSubscriptions: make(map[string]*multiReaderSubscription),
 		writableSubscriptions: make(map[string]map[WritableSubscription]struct{}),
 	}
-	tp.broadcastTxsToStateURIProvidersTask = NewBroadcastTxsToStateURIProvidersTask(10*time.Second, store, peerStore, transportsMap)
-	tp.announceP2PStateURIsTask = NewAnnounceP2PStateURIsTask(10*time.Second, txStore, peerStore, controllerHub, transportsMap)
+	// tp.broadcastTxsToStateURIProvidersTask = NewBroadcastTxsToStateURIProvidersTask(10*time.Second, store, peerStore, transportsMap)
+	tp.announceP2PStateURIsTask = NewAnnounceP2PStateURIsTask(10*time.Second, tp)
 	return tp
 }
 
@@ -116,6 +128,8 @@ func (tp *treeProtocol) Start() error {
 	}
 
 	tp.controllerHub.OnNewState(tp.handleNewState)
+	tp.hushProto.OnGroupMessageEncrypted(ProtocolName, tp.handlePrivateTxEncrypted)
+	tp.hushProto.OnGroupMessageDecrypted(ProtocolName, tp.handlePrivateTxDecrypted)
 
 	for _, tpt := range tp.transports {
 		tp.Infof(0, "registering %v", tpt.Name())
@@ -137,10 +151,10 @@ func (tp *treeProtocol) Start() error {
 		}
 	})
 
-	err = tp.Process.SpawnChild(nil, tp.broadcastTxsToStateURIProvidersTask)
-	if err != nil {
-		return err
-	}
+	// err = tp.Process.SpawnChild(nil, tp.broadcastTxsToStateURIProvidersTask)
+	// if err != nil {
+	// 	return err
+	// }
 	err = tp.Process.SpawnChild(nil, tp.announceP2PStateURIsTask)
 	if err != nil {
 		return err
@@ -190,95 +204,42 @@ func (tp *treeProtocol) SendTx(ctx context.Context, tx tree.Tx) (err error) {
 		}
 	}
 
-	err = tp.controllerHub.AddTx(&tx)
-	if err != nil {
-		return err
+	switch tp.acl.TypeOf(tx.StateURI) {
+	case StateURIType_Invalid:
+		return errors.Errorf("invalid state URI: %v", tx.StateURI)
+
+	case StateURIType_Private:
+		err = tp.controllerHub.AddTx(tx)
+		if err != nil {
+			return err
+		}
+		// Broadcasting happens in `tp.handleNewState` to ensure that we have
+		// the state tree's `.Members` field
+
+	case StateURIType_Public, StateURIType_DeviceLocal:
+		err = tp.controllerHub.AddTx(tx)
+		if err != nil {
+			return err
+		}
+		tp.broadcastToWritableSubscribers(ctx, tx.StateURI, &tx, nil, nil, nil)
 	}
 	return nil
 }
 
-// Returns peers discovered through any transport who claim to provide the
-// stateURI in question.
-func (tp *treeProtocol) ProvidersOfStateURI(ctx context.Context, stateURI string) <-chan TreePeerConn {
-	ch := make(chan TreePeerConn)
+func (tp *treeProtocol) hushMessageIDForTx(tx tree.Tx) string {
+	return tx.StateURI + ":" + tx.ID.Hex()
+}
 
-	if utils.IsLocalStateURI(stateURI) {
-		close(ch)
-		return ch
+func (tp *treeProtocol) parseHushMessageID(id string) (string, types.ID, error) {
+	parts := strings.Split(id, ":")
+	if len(parts) != 2 {
+		return "", types.ID{}, errors.Errorf("bad hush message ID for tx: %v", id)
 	}
-
-	child := tp.Process.NewChild(ctx, "ProvidersOfStateURI "+stateURI)
-	defer child.AutocloseWithCleanup(func() {
-		close(ch)
-	})
-
-	var alreadySent sync.Map
-
-	child.Go(nil, "from PeerStore", func(ctx context.Context) {
-		for _, peerDetails := range tp.peerStore.PeersServingStateURI(stateURI) {
-			dialInfo := peerDetails.DialInfo()
-			tpt, exists := tp.transports[dialInfo.TransportName]
-			if !exists {
-				continue
-			}
-
-			if _, exists := alreadySent.LoadOrStore(dialInfo, struct{}{}); exists {
-				continue
-			}
-
-			peerConn, err := tpt.NewPeerConn(ctx, dialInfo.DialAddr)
-			if err != nil {
-				tp.Warnf("error creating new peer conn (transport: %v, dialAddr: %v)", dialInfo.TransportName, dialInfo.DialAddr)
-				continue
-			}
-
-			treePeerConn, is := peerConn.(TreePeerConn)
-			if !is {
-				continue
-			}
-
-			select {
-			case <-ctx.Done():
-				return
-			case ch <- treePeerConn:
-			}
-		}
-	})
-
-	for _, tpt := range tp.transports {
-		innerCh, err := tpt.ProvidersOfStateURI(ctx, stateURI)
-		if err != nil {
-			tp.Warnf("error fetching providers of State-URI %v on transport %v: %v %+v", stateURI, tpt.Name(), err)
-			continue
-		}
-
-		child.Go(nil, tpt.Name(), func(ctx context.Context) {
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case peer, open := <-innerCh:
-					if !open {
-						return
-					}
-
-					if _, exists := alreadySent.LoadOrStore(peer.DialInfo(), struct{}{}); exists {
-						continue
-					}
-
-					peer.AddStateURI(stateURI)
-
-					select {
-					case <-ctx.Done():
-						return
-					case ch <- peer:
-					}
-				}
-			}
-		})
+	txID, err := types.IDFromHex(parts[1])
+	if err != nil {
+		return "", types.ID{}, err
 	}
-
-	return ch
+	return parts[0], txID, nil
 }
 
 func (tp *treeProtocol) handleTxReceived(tx tree.Tx, peerConn TreePeerConn) {
@@ -293,7 +254,7 @@ func (tp *treeProtocol) handleTxReceived(tx tree.Tx, peerConn TreePeerConn) {
 	}
 
 	if !exists {
-		err := tp.controllerHub.AddTx(&tx)
+		err := tp.controllerHub.AddTx(tx)
 		if err != nil {
 			tp.Errorf("error adding tx to controllerHub: %v", err)
 		}
@@ -311,13 +272,91 @@ func (tp *treeProtocol) handleTxReceived(tx tree.Tx, peerConn TreePeerConn) {
 	}
 }
 
+func (tp *treeProtocol) handlePrivateTxReceived(encryptedTx EncryptedTx, peerConn TreePeerConn) {
+	tp.Infof(0, "private tx received: tx=%v peer=%v", encryptedTx.ID, peerConn.DialInfo())
+
+	err := tp.hushProto.DecryptGroupMessage(encryptedTx)
+	if err != nil {
+		tp.Errorf("while submitting private tx for decryption: %v", err)
+		return
+	}
+
+	// @@TODO: ack?
+}
+
+func (tp *treeProtocol) handlePrivateTxEncrypted(encryptedTx protohush.GroupMessage) {
+	tp.Infof(0, "broadcasting private tx %v", encryptedTx.ID)
+
+	stateURI, txID, err := tp.parseHushMessageID(encryptedTx.ID)
+	if err != nil {
+		tp.Errorf("while parsing hush message ID: %v", err)
+		return
+	}
+
+	tx, err := tp.txStore.FetchTx(stateURI, txID)
+	if err != nil {
+		tp.Errorf("while fetching tx %v %v from tx store: %v", stateURI, txID, err)
+		return
+	}
+
+	err = tp.store.SaveEncryptedTx(tx.StateURI, tx.ID, encryptedTx)
+	if err != nil {
+		tp.Errorf("while saving encrypted tx to database: %v", err)
+		return
+	}
+
+	tp.broadcastToWritableSubscribers(context.TODO(), stateURI, &tx, &encryptedTx, nil, nil)
+	// @@TODO: send to Vault
+}
+
+func (tp *treeProtocol) handlePrivateTxDecrypted(sender types.Address, plaintext []byte, encryptedTx protohush.GroupMessage) {
+	var tx tree.Tx
+	err := tx.Unmarshal(plaintext)
+	if err != nil {
+		tp.Errorf("while unmarshaling tx protobuf: %v", err)
+		return
+	}
+
+	tp.Infof(0, "private tx received (stateURI=%v id=%v sender=%v)", tx.StateURI, tx.ID, sender)
+
+	err = tp.store.SaveEncryptedTx(tx.StateURI, tx.ID, encryptedTx)
+	if err != nil {
+		tp.Errorf("while saving encrypted tx to database: %v", err)
+		return
+	}
+
+	err = tp.controllerHub.AddTx(tx)
+	if err != nil {
+		tp.Errorf("while adding private tx to controller: %v", err)
+		return
+	}
+
+	// tp.store.MarkTxSeenByPeer(peerConn.DeviceSpecificID(), tx.StateURI, tx.ID)
+
+	// // The ACK happens in a separate stream
+	// peerConn2, err := peerConn.Transport().NewPeerConn(context.TODO(), peerConn.DialInfo().DialAddr)
+	// if err != nil {
+	//  tp.Errorf("error ACKing peer: %v", err)
+	// }
+	// defer peerConn2.Close()
+	// err = peerConn2.(TreePeerConn).Ack(tx.StateURI, tx.ID)
+	// if err != nil {
+	//  tp.Errorf("error ACKing peer: %v", err)
+	// }
+
+	tp.broadcastToWritableSubscribers(context.TODO(), tx.StateURI, &tx, &encryptedTx, nil, nil)
+	// @@TODO: send to Vault
+}
+
 func (tp *treeProtocol) handleAckReceived(stateURI string, txID types.ID, peerConn TreePeerConn) {
 	tp.Infof(0, "ack received: tx=%v peer=%v", txID.Hex(), peerConn.DialInfo().DialAddr)
 	tp.store.MarkTxSeenByPeer(peerConn.DeviceSpecificID(), stateURI, txID)
 }
 
 func (tp *treeProtocol) handleP2PStateURIReceived(stateURI string, peerConn TreePeerConn) {
-	tp.Infof(0, "p2p state URI received: stateURI=%v peer=%v", stateURI, peerConn.DialInfo().DialAddr)
+	// tp.Infof(0, "p2p state URI received: stateURI=%v peer=%v", stateURI, peerConn.DialInfo().DialAddr)
+
+	peerConn.AddStateURI(stateURI)
 
 	err := tp.subscribe(context.TODO(), stateURI)
 	if err != nil {
@@ -334,15 +373,33 @@ func (tp *treeProtocol) handleFetchHistoryRequest(stateURI string, opts FetchHis
 	// @@TODO: respect the `opts.ToTxID` param
 	// @@TODO: if .FromTxID == 0, set it to GenesisTxID
 
+	allowed, err := tp.acl.HasReadAccess(stateURI, nil, writeSub.Addresses())
+	if err != nil {
+		return errors.Wrapf(err, "while querying ACL for read access (stateURI=%v)", stateURI)
+	} else if !allowed {
+		return types.Err403
+	}
+
+	isPrivate := tp.acl.TypeOf(stateURI) == StateURIType_Private
+
 	iter := tp.controllerHub.FetchTxs(stateURI, opts.FromTxID)
-	defer iter.Cancel()
+	defer iter.Close()
 
 	for {
 		tx := iter.Next()
 		if iter.Error() != nil {
 			return iter.Error()
 		} else if tx == nil {
-			return nil
+			break
+		}
+
+		var encryptedTx *EncryptedTx
+		if isPrivate {
+			encryptedTx2, err := tp.store.EncryptedTx(stateURI, tx.ID)
+			if err != nil {
+				return err
+			}
+			encryptedTx = &encryptedTx2
 		}
 
 		leaves, err := tp.controllerHub.Leaves(stateURI)
@@ -350,64 +407,57 @@ func (tp *treeProtocol) handleFetchHistoryRequest(stateURI string, opts FetchHis
 			return err
 		}
 
-		isPrivate, err := tp.controllerHub.IsPrivate(tx.StateURI)
-		if err != nil {
-			return err
-		}
-
 		if isPrivate {
-			var isAllowed bool
-			if peerConn, isTreePeerConn := writeSub.(TreePeerConn); isTreePeerConn {
-				for _, addr := range peerConn.Addresses() {
-					isAllowed, err = tp.controllerHub.IsMember(tx.StateURI, addr)
-					if err != nil {
-						tp.Errorf("error determining if peer '%v' is a member of private state URI '%v': %v", addr, tx.StateURI, err)
-						return err
-					}
-					if isAllowed {
-						break
-					}
-				}
-			} else {
-				// In-process subscriptions are trusted
-				isAllowed = true
-			}
-
-			if isAllowed {
-				writeSub.EnqueueWrite(tx.StateURI, tx, nil, leaves)
-			}
-
+			tx = nil
 		} else {
-			writeSub.EnqueueWrite(tx.StateURI, tx, nil, leaves)
+			encryptedTx = nil
 		}
+		msg := SubscriptionMsg{
+			StateURI:    stateURI,
+			Tx:          tx,
+			EncryptedTx: encryptedTx,
+			State:       nil,
+			Leaves:      leaves,
+		}
+		writeSub.EnqueueWrite(msg)
 	}
 	return nil
 }
 
 func (tp *treeProtocol) handleWritableSubscriptionOpened(
-	stateURI string,
-	keypath state.Keypath,
-	subType SubscriptionType,
-	writeSubImpl WritableSubscriptionImpl,
-	fetchHistoryOpts *FetchHistoryOpts,
-) {
-	tp.Debugf("write sub opened (%v %v)", stateURI, writeSubImpl.DialInfo())
+	req SubscriptionRequest,
+	writeSubImplFactory WritableSubscriptionImplFactory,
+) (<-chan struct{}, error) {
+	allowed, err := tp.acl.HasReadAccess(req.StateURI, req.Keypath, req.Addresses)
+	if err != nil {
+		return nil, errors.Wrapf(err, "while querying ACL for read access (stateURI=%v)", req.StateURI)
+	} else if !allowed {
+		tp.Debugf("blocked incoming subscription from %v %+v", req.Addresses, errors.New(""))
+		return nil, types.Err403
+	}
 
-	writeSub := newWritableSubscription(stateURI, keypath, subType, writeSubImpl)
-	err := tp.Process.SpawnChild(nil, writeSub)
+	isPrivate := tp.acl.TypeOf(req.StateURI) == StateURIType_Private
+
+	writeSubImpl, err := writeSubImplFactory()
+	if err != nil {
+		return nil, err
+	}
+
+	writeSub := newWritableSubscription(req.StateURI, req.Keypath, req.Type, isPrivate, req.Addresses, writeSubImpl)
+	err = tp.Process.SpawnChild(nil, writeSub)
 	if err != nil {
 		tp.Errorf("while spawning writable subscription: %v", err)
-		return
+		return nil, err
 	}
 
 	func() {
 		tp.writableSubscriptionsMu.Lock()
 		defer tp.writableSubscriptionsMu.Unlock()
 
-		if _, exists := tp.writableSubscriptions[stateURI]; !exists {
-			tp.writableSubscriptions[stateURI] = make(map[WritableSubscription]struct{})
+		if _, exists := tp.writableSubscriptions[req.StateURI]; !exists {
+			tp.writableSubscriptions[req.StateURI] = make(map[WritableSubscription]struct{})
 		}
-		tp.writableSubscriptions[stateURI][writeSub] = struct{}{}
+		tp.writableSubscriptions[req.StateURI][writeSub] = struct{}{}
 	}()
 
 	tp.Process.Go(nil, "await close "+writeSub.String(), func(ctx context.Context) {
@@ -418,40 +468,48 @@ func (tp *treeProtocol) handleWritableSubscriptionOpened(
 		tp.handleWritableSubscriptionClosed(writeSub)
 	})
 
-	if subType.Includes(SubscriptionType_Txs) && fetchHistoryOpts != nil {
-		tp.handleFetchHistoryRequest(stateURI, *fetchHistoryOpts, writeSub)
+	if req.Type.Includes(SubscriptionType_Txs) && req.FetchHistoryOpts != nil {
+		tp.handleFetchHistoryRequest(req.StateURI, *req.FetchHistoryOpts, writeSub)
 	}
 
-	if subType.Includes(SubscriptionType_States) {
+	if req.Type.Includes(SubscriptionType_States) {
 		// Normalize empty keypaths
-		if keypath.Equals(state.KeypathSeparator) {
-			keypath = nil
+		if req.Keypath.Equals(state.KeypathSeparator) {
+			req.Keypath = nil
 		}
 
 		// Immediately write the current state to the subscriber
-		node, err := tp.controllerHub.StateAtVersion(stateURI, nil)
+		node, err := tp.controllerHub.StateAtVersion(req.StateURI, nil)
 		if err != nil && errors.Cause(err) != tree.ErrNoController {
 			tp.Errorf("error writing initial state to peer: %v", err)
 			writeSub.Close()
-			return
+			return nil, err
+
 		} else if err == nil {
 			defer node.Close()
 
-			leaves, err := tp.controllerHub.Leaves(stateURI)
+			leaves, err := tp.controllerHub.Leaves(req.StateURI)
 			if err != nil {
-				tp.Errorf("error writing initial state to peer (%v): %v", stateURI, err)
+				tp.Errorf("error writing initial state to peer (%v): %v", req.StateURI, err)
 			} else {
-				node, err := node.CopyToMemory(keypath, nil)
+				node, err := node.CopyToMemory(req.Keypath, nil)
 				if err != nil && errors.Cause(err) == types.Err404 {
 					// no-op
 				} else if err != nil {
-					tp.Errorf("error writing initial state to peer (%v): %v", stateURI, err)
+					tp.Errorf("error writing initial state to peer (%v): %v", req.StateURI, err)
 				} else {
-					writeSub.EnqueueWrite(stateURI, nil, node, leaves)
+					writeSub.EnqueueWrite(SubscriptionMsg{
+						StateURI:    req.StateURI,
+						Tx:          nil,
+						EncryptedTx: nil,
+						State:       node,
+						Leaves:      leaves,
+					})
 				}
 			}
 		}
 	}
+	return writeSub.Done(), nil
 }
 
 func (tp *treeProtocol) handleWritableSubscriptionClosed(sub WritableSubscription) {
@@ -461,6 +519,11 @@ func (tp *treeProtocol) handleWritableSubscriptionClosed(sub WritableSubscriptio
 }
 
 func (tp *treeProtocol) subscribe(ctx context.Context, stateURI string) error {
+	treeType := tp.acl.TypeOf(stateURI)
+	if treeType == StateURIType_Invalid {
+		return errors.Errorf("invalid state URI: %v", stateURI)
+	}
+
 	err := tp.store.AddSubscribedStateURI(stateURI)
 	if err != nil {
 		return errors.Wrap(err, "while updating config store")
@@ -471,25 +534,40 @@ func (tp *treeProtocol) subscribe(ctx context.Context, stateURI string) error {
 		return err
 	}
 
-	// If this state URI is not intended to be shared, don't bother subscribing to other nodes
-	if !utils.IsLocalStateURI(stateURI) {
-		func() {
-			tp.readableSubscriptionsMu.Lock()
-			defer tp.readableSubscriptionsMu.Unlock()
-
-			if _, exists := tp.readableSubscriptions[stateURI]; !exists {
-				multiSub := newMultiReaderSubscription(
-					stateURI,
-					tp.store.MaxPeersPerSubscription(),
-					tp.handleTxReceived,
-					tp.ProvidersOfStateURI,
-				)
-				tp.Process.SpawnChild(nil, multiSub)
-				tp.readableSubscriptions[stateURI] = multiSub
-			}
-		}()
+	switch treeType {
+	case StateURIType_Invalid:
+	case StateURIType_DeviceLocal:
+	case StateURIType_Private:
+		tp.openReadableSubscription(stateURI)
+	case StateURIType_Public:
+		tp.openReadableSubscription(stateURI)
 	}
 	return nil
+}
+
+func (tp *treeProtocol) openReadableSubscription(stateURI string) {
+	tp.readableSubscriptionsMu.Lock()
+	defer tp.readableSubscriptionsMu.Unlock()
+
+	if _, exists := tp.readableSubscriptions[stateURI]; !exists {
+		tp.Debugf("opening subscription to %v", stateURI)
+		multiSub := newMultiReaderSubscription(
+			stateURI,
+			tp.store.MaxPeersPerSubscription(),
+			func(msg SubscriptionMsg, peerConn TreePeerConn) {
+				if msg.EncryptedTx != nil {
+					tp.handlePrivateTxReceived(*msg.EncryptedTx, peerConn)
+				} else if msg.Tx != nil {
+					tp.handleTxReceived(*msg.Tx, peerConn)
+				} else {
+					panic("wat")
+				}
+			},
+			tp.ProvidersOfStateURI,
+		)
+		tp.Process.SpawnChild(nil, multiSub)
+		tp.readableSubscriptions[stateURI] = multiSub
+	}
 }
 
 func (tp *treeProtocol) Subscribe(
@@ -504,8 +582,27 @@ func (tp *treeProtocol) Subscribe(
 		return nil, err
 	}
 
+	// Open the subscription with the node's own credentials
+	identities, err := tp.keyStore.Identities()
+	if err != nil {
+		return nil, err
+	}
+	var addrs []types.Address
+	for _, identity := range identities {
+		addrs = append(addrs, identity.Address())
+	}
+
 	sub := newInProcessSubscription(stateURI, keypath, subscriptionType, tp)
-	tp.handleWritableSubscriptionOpened(stateURI, keypath, subscriptionType, sub, fetchHistoryOpts)
+	req := SubscriptionRequest{
+		StateURI:         stateURI,
+		Keypath:          keypath,
+		Type:             subscriptionType,
+		FetchHistoryOpts: fetchHistoryOpts,
+		Addresses:        addrs,
+	}
+	tp.handleWritableSubscriptionOpened(req, func() (WritableSubscriptionImpl, error) {
+		return sub, nil
+	})
 	return sub, nil
 }
 
@@ -537,7 +634,122 @@ func (tp *treeProtocol) SubscribeStateURIs() (StateURISubscription, error) {
 	return sub, nil
 }
 
-func (tp *treeProtocol) handleNewState(tx *tree.Tx, node state.Node, leaves []types.ID) {
+// Returns peers discovered through any transport who claim to provide the
+// stateURI in question.
+func (tp *treeProtocol) ProvidersOfStateURI(ctx context.Context, stateURI string) <-chan TreePeerConn {
+	var (
+		ch          = make(chan TreePeerConn)
+		alreadySent sync.Map
+	)
+
+	switch tp.acl.TypeOf(stateURI) {
+	case StateURIType_Invalid, StateURIType_DeviceLocal:
+		close(ch)
+		return ch
+
+	case StateURIType_Private:
+		members, err := tp.acl.MembersOf(stateURI)
+		if err != nil {
+			tp.Errorf("while fetching members of state URI '%v': %v", stateURI, err)
+			close(ch)
+			return ch
+		}
+		pds := tp.peerStore.PeersServingStateURI(stateURI)
+		for addr := range members {
+			pds = append(pds, tp.peerStore.PeersWithAddress(addr)...)
+		}
+		tp.Process.Go(nil, "ProvidersOfStateURI "+stateURI, func(ctx context.Context) {
+			peerConns := tp.peerDetailsToPeerConns(ctx, pds)
+			for _, peerConn := range peerConns {
+				if _, exists := alreadySent.LoadOrStore(peerConn.DialInfo(), struct{}{}); exists {
+					continue
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case ch <- peerConn:
+				}
+			}
+		})
+
+	case StateURIType_Public:
+		child := tp.Process.NewChild(ctx, "ProvidersOfStateURI "+stateURI)
+		defer child.AutocloseWithCleanup(func() {
+			close(ch)
+		})
+
+		child.Go(nil, "from PeerStore", func(ctx context.Context) {
+			peerConns := tp.peerDetailsToPeerConns(ctx, tp.peerStore.PeersServingStateURI(stateURI))
+			for _, peerConn := range peerConns {
+				if _, exists := alreadySent.LoadOrStore(peerConn.DialInfo(), struct{}{}); exists {
+					continue
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case ch <- peerConn:
+				}
+			}
+		})
+
+		for _, tpt := range tp.transports {
+			innerCh, err := tpt.ProvidersOfStateURI(ctx, stateURI)
+			if err != nil {
+				tp.Warnf("error fetching providers of State-URI %v on transport %v: %v %+v", stateURI, tpt.Name(), err)
+				continue
+			}
+
+			child.Go(nil, tpt.Name(), func(ctx context.Context) {
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case peer, open := <-innerCh:
+						if !open {
+							return
+						}
+						peer.AddStateURI(stateURI)
+
+						if _, exists := alreadySent.LoadOrStore(peer.DialInfo(), struct{}{}); exists {
+							continue
+						}
+
+						select {
+						case <-ctx.Done():
+							return
+						case ch <- peer:
+						}
+					}
+				}
+			})
+		}
+	}
+
+	return ch
+}
+
+func (tp *treeProtocol) peerDetailsToPeerConns(ctx context.Context, pds []swarm.PeerDetails) []TreePeerConn {
+	var conns []TreePeerConn
+	for _, peerDetails := range pds {
+		dialInfo := peerDetails.DialInfo()
+		tpt, exists := tp.transports[dialInfo.TransportName]
+		if !exists {
+			continue
+		}
+		peerConn, err := tpt.NewPeerConn(ctx, dialInfo.DialAddr)
+		if err != nil {
+			continue
+		}
+		treePeerConn, is := peerConn.(TreePeerConn)
+		if !is {
+			continue
+		}
+		conns = append(conns, treePeerConn)
+	}
+	return conns
+}
+
+func (tp *treeProtocol) handleNewState(tx tree.Tx, node state.Node, leaves []types.ID) {
 	node, err := node.CopyToMemory(nil, nil)
 	if err != nil {
 		tp.Errorf("handleNewState: couldn't copy state to memory: %v", err)
@@ -545,322 +757,238 @@ func (tp *treeProtocol) handleNewState(tx *tree.Tx, node state.Node, leaves []ty
 	}
 
 	// @@TODO: don't do this, this is stupid.  store ungossiped txs in the DB and create a
-	// PeerManager that gossips them on a SleeperTask-like trigger.
-
-	// If this is the genesis tx of a private state URI, ensure that we subscribe to that state URI
-	// @@TODO: allow blacklisting of senders
-	if tx.IsPrivate() && tx.ID == tree.GenesisTxID && !tp.store.SubscribedStateURIs().Contains(tx.StateURI) {
-		tp.Process.Go(nil, "auto-subscribe", func(ctx context.Context) {
-			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-			defer cancel()
-
-			sub, err := tp.Subscribe(ctx, tx.StateURI, 0, nil, nil)
-			if err != nil {
-				tp.Errorf("error subscribing to state URI %v: %v", tx.StateURI, err)
-			}
-			sub.Close() // We don't need the in-process subscription
-		})
-	}
-
-	// If this state URI isn't meant to be shared, don't broadcast
-	// if utils.IsLocalStateURI(tx.StateURI) {
-	//  return
-	// }
+	// service that gossips them on a SleeperTask-like trigger.
 
 	// Broadcast state and tx to others
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 
-	child := tp.Process.NewChild(ctx, "handleNewState")
-	defer child.AutocloseWithCleanup(cancel)
+	// child := tp.Process.NewChild(ctx, "handleNewState")
+	// defer child.AutocloseWithCleanup(cancel)
 
-	var alreadySentPeers sync.Map
+	switch tp.acl.TypeOf(tx.StateURI) {
+	case StateURIType_Invalid:
+		panic("invariant violation")
 
-	child.Go(nil, "broadcastToWritableSubscribers", func(ctx context.Context) {
-		tp.broadcastToWritableSubscribers(ctx, tx, node, leaves, &alreadySentPeers, child)
-	})
-	child.Go(nil, "broadcastToPrivateRecipients", func(ctx context.Context) {
-		tp.broadcastToPrivateRecipients(ctx, tx, leaves, &alreadySentPeers, child)
-	})
+	case StateURIType_Private:
+		// If this is the genesis tx of a private state URI, ensure that we subscribe to that state URI
+		// @@TODO: allow blacklisting of senders
+		if tx.ID == tree.GenesisTxID && !tp.store.SubscribedStateURIs().Contains(tx.StateURI) {
+			tp.Process.Go(nil, "auto-subscribe", func(ctx context.Context) {
+				ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				defer cancel()
 
-	tp.broadcastTxsToStateURIProvidersTask.addTx(tx)
-}
-
-func (tp *treeProtocol) broadcastToPrivateRecipients(
-	ctx context.Context,
-	tx *tree.Tx,
-	leaves []types.ID,
-	alreadySentPeers *sync.Map,
-	child *process.Process,
-) {
-	for _, address := range tx.Recipients {
-		for _, peerDetails := range tp.peerStore.PeersWithAddress(address) {
-			tpt := tp.transports[peerDetails.DialInfo().TransportName]
-			if tpt == nil {
-				continue
-			}
-
-			maybePeer, err := tpt.NewPeerConn(ctx, peerDetails.DialInfo().DialAddr)
-			if err != nil {
-				tp.Errorf("error creating connection to peer %v: %v", peerDetails.DialInfo(), err)
-				continue
-			} else if !maybePeer.Ready() || !maybePeer.Dialable() {
-				continue
-			}
-			peer, is := maybePeer.(TreePeerConn)
-			if !is {
-				continue
-			}
-
-			if len(peer.Addresses()) == 0 {
-				panic("impossible")
-			} else if tp.store.TxSeenByPeer(peer.DeviceSpecificID(), tx.StateURI, tx.ID) {
-				continue
-			}
-			// @@TODO: do we always want to avoid broadcasting when `from == peer.address`?
-			// What if multiple devices/users are sharing an address? What if you want your
-			// own devices to sync automatically?
-			for _, addr := range peer.Addresses() {
-				if tx.From == addr {
-					continue
+				sub, err := tp.Subscribe(ctx, tx.StateURI, 0, nil, nil)
+				if err != nil {
+					tp.Errorf("error subscribing to state URI %v: %v", tx.StateURI, err)
 				}
-			}
-
-			_, alreadySent := alreadySentPeers.LoadOrStore(peer.DeviceSpecificID(), struct{}{})
-			if alreadySent {
-				continue
-			}
-
-			child.Go(nil, "broadcastToPeerConn "+peer.DialInfo().String(), func(ctx context.Context) {
-				tp.broadcastToPeerConn(ctx, tx, nil, leaves, peer, alreadySentPeers)
+				sub.Close() // We don't need the in-process subscription
 			})
 		}
-	}
-}
 
-func (tp *treeProtocol) broadcastToPeerConn(
-	ctx context.Context,
-	tx *tree.Tx,
-	state state.Node,
-	leaves []types.ID,
-	peerConn TreePeerConn,
-	alreadySentPeers *sync.Map,
-) {
-	_, alreadySent := alreadySentPeers.LoadOrStore(peerConn.DeviceSpecificID(), struct{}{})
-	if alreadySent {
-		return
-	} else if !peerConn.Ready() || !peerConn.Dialable() {
-		return
-	}
+		members, err := tp.acl.MembersOf(tx.StateURI)
+		if err != nil {
+			tp.Errorf("while fetching members of %v: %v", tx.StateURI, err)
+			return
+		}
+		txBytes, err := tx.Marshal()
+		if err != nil {
+			tp.Errorf("while marshaling tx %v %v: %v", tx.StateURI, tx.ID, err)
+			return
+		}
+		err = tp.hushProto.EncryptGroupMessage(ProtocolName, tp.hushMessageIDForTx(tx), members.Slice(), txBytes)
+		if err != nil {
+			tp.Errorf("while enqueuing hush tx %v %v: %v", tx.StateURI, tx.ID, err)
+			return
+		}
 
-	err := peerConn.EnsureConnected(ctx)
-	if err != nil {
-		return
-	}
-	defer peerConn.Close()
+		// tp.broadcastToPrivateRecipients(tx)
 
-	err = peerConn.Put(ctx, tx, state, leaves)
-	if errors.Cause(err) == types.ErrConnection {
-		return
-	} else if err != nil {
-		tp.Errorf("error writing tx to peer: %v", err)
-		return
+	case StateURIType_Public, StateURIType_DeviceLocal:
+		// @@TODO: handle "device local" separately
+		// tp.broadcastTxsToStateURIProvidersTask.addTx(tx)
+		// child.Go(nil, "broadcastToWritableSubscribers", func(ctx context.Context) {
+		// 	tp.broadcastToWritableSubscribers(ctx, tx, nil, node, leaves, &alreadySentPeers, child)
+		// })
 	}
 }
 
 func (tp *treeProtocol) broadcastToWritableSubscribers(
 	ctx context.Context,
+	stateURI string,
 	tx *tree.Tx,
+	encryptedTx *EncryptedTx,
 	state state.Node,
 	leaves []types.ID,
-	alreadySentPeers *sync.Map,
-	child *process.Process,
 ) {
 	tp.writableSubscriptionsMu.RLock()
 	defer tp.writableSubscriptionsMu.RUnlock()
 
+	isPrivate := tp.acl.TypeOf(tx.StateURI) == StateURIType_Private
+
 	for writeSub := range tp.writableSubscriptions[tx.StateURI] {
+		allowed, err := tp.acl.HasReadAccess(tx.StateURI, nil, writeSub.Addresses())
+		if err != nil {
+			tp.Errorf("while checking ACL of state URI %v", tx.StateURI)
+			continue
+		} else if !allowed {
+			// @@TODO: close subscription
+			continue
+		}
+
 		if peer, isPeer := writeSub.(TreePeerConn); isPeer {
 			// If the subscriber wants us to send states, we never skip sending
 			if tp.store.TxSeenByPeer(peer.DeviceSpecificID(), tx.StateURI, tx.ID) && !writeSub.Type().Includes(SubscriptionType_States) {
 				continue
 			}
-			_, alreadySent := alreadySentPeers.LoadOrStore(peer.DeviceSpecificID(), struct{}{})
-			if alreadySent {
-				continue
-			}
 		}
 
-		writeSub := writeSub
+		if state != nil {
+			// Drill down to the part of the state that the subscriber is interested in
+			state = state.NodeAt(writeSub.Keypath(), nil)
+		}
 
-		child.Go(nil, "broadcastToWritableSubscriber "+writeSub.String(), func(ctx context.Context) {
-			tp.broadcastToWritableSubscriber(tx, state, leaves, writeSub)
+		if isPrivate {
+			tx = nil
+		} else {
+			encryptedTx = nil
+		}
+		writeSub.EnqueueWrite(SubscriptionMsg{
+			StateURI:    stateURI,
+			Tx:          tx,
+			EncryptedTx: encryptedTx,
+			State:       state,
+			Leaves:      leaves,
 		})
 	}
 }
 
-func (tp *treeProtocol) broadcastToWritableSubscriber(
-	tx *tree.Tx,
-	node state.Node,
-	leaves []types.ID,
-	writeSub WritableSubscription,
-) {
-	isPrivate, err := tp.controllerHub.IsPrivate(tx.StateURI)
-	if err != nil {
-		tp.Errorf("error determining if state URI '%v' is private: %v", tx.StateURI, err)
-		return
-	}
+// type broadcastTxsToStateURIProvidersTask struct {
+// 	process.PeriodicTask
+// 	log.Logger
+// 	treeStore                 Store
+// 	peerStore                 swarm.PeerStore
+// 	transports                map[string]TreeTransport
+// 	txsForStateURIProviders   map[string][]tree.Tx
+// 	txsForStateURIProvidersMu sync.Mutex
+// }
 
-	// Drill down to the part of the state that the subscriber is interested in
-	keypath := writeSub.Keypath()
-	if keypath.Equals(state.KeypathSeparator) {
-		keypath = nil
-	}
-	node = node.NodeAt(keypath, nil)
+// func NewBroadcastTxsToStateURIProvidersTask(
+// 	interval time.Duration,
+// 	treeStore Store,
+// 	peerStore swarm.PeerStore,
+// 	transports map[string]TreeTransport,
+// ) *broadcastTxsToStateURIProvidersTask {
+// 	t := &broadcastTxsToStateURIProvidersTask{
+// 		Logger:                  log.NewLogger(ProtocolName),
+// 		treeStore:               treeStore,
+// 		peerStore:               peerStore,
+// 		transports:              transports,
+// 		txsForStateURIProviders: make(map[string][]tree.Tx),
+// 	}
+// 	t.PeriodicTask = *process.NewPeriodicTask("BroadcastTxsToStateURIProvidersTask", interval, t.broadcastTxsToStateURIProviders)
+// 	return t
+// }
 
-	if isPrivate {
-		var isAllowed bool
-		if peer, isPeer := writeSub.(TreePeerConn); isPeer {
-			for _, addr := range peer.Addresses() {
-				isAllowed, err = tp.controllerHub.IsMember(tx.StateURI, addr)
-				if err != nil {
-					tp.Errorf("error determining if peer '%v' is a member of private state URI '%v': %v", addr, tx.StateURI, err)
-					return
-				}
-				if isAllowed {
-					break
-				}
-			}
-		} else {
-			// In-process subscriptions are trusted
-			isAllowed = true
-		}
+// func (t *broadcastTxsToStateURIProvidersTask) addTx(tx tree.Tx) {
+// 	t.txsForStateURIProvidersMu.Lock()
+// 	defer t.txsForStateURIProvidersMu.Unlock()
+// 	t.txsForStateURIProviders[tx.StateURI] = append(t.txsForStateURIProviders[tx.StateURI], tx.Copy())
+// }
 
-		if isAllowed {
-			writeSub.EnqueueWrite(tx.StateURI, tx, node, leaves)
-		}
+// func (t *broadcastTxsToStateURIProvidersTask) takeTxs() map[string][]tree.Tx {
+// 	t.txsForStateURIProvidersMu.Lock()
+// 	defer t.txsForStateURIProvidersMu.Unlock()
+// 	txs := t.txsForStateURIProviders
+// 	t.txsForStateURIProviders = make(map[string][]tree.Tx)
+// 	return txs
+// }
 
-	} else {
-		writeSub.EnqueueWrite(tx.StateURI, tx, node, leaves)
-	}
-}
+// func (t *broadcastTxsToStateURIProvidersTask) broadcastTxsToStateURIProviders(ctx context.Context) {
+// 	txs := t.takeTxs()
+// 	if len(txs) == 0 {
+// 		return
+// 	}
 
-type broadcastTxsToStateURIProvidersTask struct {
-	process.PeriodicTask
-	log.Logger
-	treeStore                 Store
-	peerStore                 swarm.PeerStore
-	transports                map[string]TreeTransport
-	txsForStateURIProviders   map[string][]*tree.Tx
-	txsForStateURIProvidersMu sync.Mutex
-}
+// 	t.Debugf("broadcasting txs to state URI providers")
 
-func NewBroadcastTxsToStateURIProvidersTask(
-	interval time.Duration,
-	treeStore Store,
-	peerStore swarm.PeerStore,
-	transports map[string]TreeTransport,
-) *broadcastTxsToStateURIProvidersTask {
-	t := &broadcastTxsToStateURIProvidersTask{
-		Logger:                  log.NewLogger("tree proto"),
-		treeStore:               treeStore,
-		peerStore:               peerStore,
-		transports:              transports,
-		txsForStateURIProviders: make(map[string][]*tree.Tx),
-	}
-	t.PeriodicTask = *process.NewPeriodicTask("BroadcastTxsToStateURIProvidersTask", interval, t.broadcastTxsToStateURIProviders)
-	return t
-}
+// 	encryptedTxs := make(map[string]map[types.ID]protohush.GroupMessage)
 
-func (t *broadcastTxsToStateURIProvidersTask) addTx(tx *tree.Tx) {
-	t.txsForStateURIProvidersMu.Lock()
-	defer t.txsForStateURIProvidersMu.Unlock()
-	t.txsForStateURIProviders[tx.StateURI] = append(t.txsForStateURIProviders[tx.StateURI], tx.Copy())
-}
+// 	for stateURI, txs := range txs {
+// 		encryptedTxs[stateURI] = make(map[types.ID]protohush.GroupMessage)
 
-func (t *broadcastTxsToStateURIProvidersTask) takeTxs() map[string][]*tree.Tx {
-	t.txsForStateURIProvidersMu.Lock()
-	defer t.txsForStateURIProvidersMu.Unlock()
-	txs := t.txsForStateURIProviders
-	t.txsForStateURIProviders = make(map[string][]*tree.Tx)
-	return txs
-}
+// 		for _, peerDetails := range t.peerStore.PeersServingStateURI(stateURI) {
+// 			txs := txs
+// 			peerDetails := peerDetails
 
-func (t *broadcastTxsToStateURIProvidersTask) broadcastTxsToStateURIProviders(ctx context.Context) {
-	txs := t.takeTxs()
-	if len(txs) == 0 {
-		return
-	}
+// 			t.Process.Go(nil, peerDetails.DialInfo().String(), func(ctx context.Context) {
+// 				tpt, exists := t.transports[peerDetails.DialInfo().TransportName]
+// 				if !exists {
+// 					return
+// 				}
+// 				peerConn, err := tpt.NewPeerConn(ctx, peerDetails.DialInfo().DialAddr)
+// 				if err != nil {
+// 					t.Errorf("while creating NewPeerConn: %v", err)
+// 					return
+// 				} else if !peerConn.Ready() || !peerConn.Dialable() {
+// 					return
+// 				}
+// 				treePeer, is := peerConn.(TreePeerConn)
+// 				if !is {
+// 					t.Errorf("peer is not TreePeerConn, should be impossible")
+// 					return
+// 				}
+// 				err = treePeer.EnsureConnected(ctx)
+// 				if err != nil {
+// 					return
+// 				}
+// 				defer treePeer.Close()
 
-	t.Debugf("broadcasting txs to state URI providers")
+// 				for _, tx := range txs {
+// 					if t.treeStore.TxSeenByPeer(treePeer.DeviceSpecificID(), stateURI, tx.ID) {
+// 						continue
+// 					}
 
-	for stateURI, txs := range txs {
-		for _, peerDetails := range t.peerStore.PeersServingStateURI(stateURI) {
-			txs := txs
-			peerDetails := peerDetails
+// 					_, exists := encryptedTxs[stateURI][tx.ID]
+// 					if !exists {
+// 						encryptedTx, err := t.treeStore.EncryptedTx(stateURI, tx.ID)
+// 						if err != nil {
+// 							t.Errorf("while fetching encrypted tx from database: %v", err)
+// 							continue
+// 						}
+// 						encryptedTxs[stateURI][tx.ID] = encryptedTx
+// 					}
 
-			t.Process.Go(nil, peerDetails.DialInfo().String(), func(ctx context.Context) {
-				tpt, exists := t.transports[peerDetails.DialInfo().TransportName]
-				if !exists {
-					return
-				}
-				peerConn, err := tpt.NewPeerConn(ctx, peerDetails.DialInfo().DialAddr)
-				if err != nil {
-					t.Errorf("while creating NewPeerConn: %v", err)
-					return
-				} else if !peerConn.Ready() || !peerConn.Dialable() {
-					return
-				}
-				treePeer, is := peerConn.(TreePeerConn)
-				if !is {
-					t.Errorf("peer is not TreePeerConn, should be impossible")
-					return
-				}
-				err = treePeer.EnsureConnected(ctx)
-				if err != nil {
-					return
-				}
-				defer treePeer.Close()
-
-				for _, tx := range txs {
-					if t.treeStore.TxSeenByPeer(treePeer.DeviceSpecificID(), stateURI, tx.ID) {
-						continue
-					}
-					err = treePeer.Put(ctx, tx, nil, nil)
-					if err != nil {
-						t.Errorf("while sending tx to state URI provider: %v", err)
-						continue
-					}
-				}
-			})
-		}
-	}
-}
+// 					err = treePeer.Put(ctx, SubscriptionMsg{
+// 						StateURI: tx.StateURI,
+// 						Tx:       &tx,
+// 					})
+// 					if err != nil {
+// 						t.Errorf("while sending tx to state URI provider: %v", err)
+// 						continue
+// 					}
+// 				}
+// 			})
+// 		}
+// 	}
+// }
 
 type announceP2PStateURIsTask struct {
 	process.PeriodicTask
 	log.Logger
-	txStore                   tree.TxStore
-	peerStore                 swarm.PeerStore
-	controllerHub             tree.ControllerHub
-	transports                map[string]TreeTransport
-	txsForStateURIProviders   map[string][]*tree.Tx
-	txsForStateURIProvidersMu sync.Mutex
+	treeProto *treeProtocol
+	// txStore       tree.TxStore
+	// peerStore     swarm.PeerStore
+	// controllerHub tree.ControllerHub
+	// transports    map[string]TreeTransport
 }
 
 func NewAnnounceP2PStateURIsTask(
 	interval time.Duration,
-	txStore tree.TxStore,
-	peerStore swarm.PeerStore,
-	controllerHub tree.ControllerHub,
-	transports map[string]TreeTransport,
+	treeProto *treeProtocol,
 ) *announceP2PStateURIsTask {
 	t := &announceP2PStateURIsTask{
-		Logger:                  log.NewLogger("tree proto"),
-		txStore:                 txStore,
-		peerStore:               peerStore,
-		controllerHub:           controllerHub,
-		transports:              transports,
-		txsForStateURIProviders: make(map[string][]*tree.Tx),
+		Logger:    log.NewLogger(ProtocolName),
+		treeProto: treeProto,
 	}
 	t.PeriodicTask = *process.NewPeriodicTask("BroadcastTxsToStateURIProvidersTask", interval, t.announceP2PStateURIs)
 	return t
@@ -869,29 +997,25 @@ func NewAnnounceP2PStateURIsTask(
 func (t *announceP2PStateURIsTask) announceP2PStateURIs(ctx context.Context) {
 	// t.Debugf("announcing p2p state URIs")
 
-	stateURIs, err := t.txStore.KnownStateURIs()
+	stateURIs, err := t.treeProto.txStore.KnownStateURIs()
 	if err != nil {
 		t.Errorf("while fetching state URIs from tx store: %v", err)
 		return
 	}
 	for _, stateURI := range stateURIs {
-		is, err := t.controllerHub.IsPrivate(stateURI)
-		if err != nil {
-			t.Errorf("while determining if state URI %v is private: %v", stateURI, err)
-			continue
-		} else if !is {
+		if t.treeProto.acl.TypeOf(stateURI) != StateURIType_Private {
 			continue
 		}
 
-		members, err := t.controllerHub.Members(stateURI)
+		members, err := t.treeProto.acl.MembersOf(stateURI)
 		if err != nil {
 			t.Errorf("while fetching members of state URI %v: %v", stateURI, err)
 			continue
 		}
 
 		for peerAddress := range members {
-			for _, peerDetails := range t.peerStore.PeersWithAddress(peerAddress) {
-				tpt, exists := t.transports[peerDetails.DialInfo().TransportName]
+			for _, peerDetails := range t.treeProto.peerStore.PeersWithAddress(peerAddress) {
+				tpt, exists := t.treeProto.transports[peerDetails.DialInfo().TransportName]
 				if !exists {
 					continue
 				}
@@ -910,7 +1034,7 @@ func (t *announceP2PStateURIsTask) announceP2PStateURIs(ctx context.Context) {
 					continue
 				}
 
-				t.Process.Go(nil, peerDetails.DialInfo().String(), func(ctx context.Context) {
+				t.treeProto.Process.Go(nil, peerDetails.DialInfo().String(), func(ctx context.Context) {
 					err := treePeer.EnsureConnected(ctx)
 					if err != nil {
 						return

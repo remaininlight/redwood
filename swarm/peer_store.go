@@ -1,7 +1,6 @@
 package swarm
 
 import (
-	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -171,10 +170,10 @@ func (s *peerStore) ensurePeerDetails(dialInfo PeerDialInfo, deviceUniqueID stri
 			s.peersWithDeviceUniqueID[deviceUniqueID] = make(map[PeerDialInfo]*peerDetails)
 		}
 		s.peersWithDeviceUniqueID[deviceUniqueID][dialInfo] = pd
+		pd.deviceUniqueID = deviceUniqueID
 	}
 
 	pd.dialInfo = dialInfo
-	pd.deviceUniqueID = deviceUniqueID
 
 	s.peers[dialInfo] = pd
 	if len(pd.addresses) == 0 {
@@ -204,7 +203,7 @@ func (s *peerStore) AddVerifiedCredentials(
 ) PeerDetails {
 	if address.IsZero() {
 		panic("cannot add verified peer without credentials")
-	} else if deviceUniqueID == "" {
+	} else if deviceUniqueID == "" || deviceUniqueID == "0000000000000000000000000000000000000000000000000000000000000000" {
 		panic("cannot add verified peer without device unique ID")
 	}
 
@@ -432,11 +431,20 @@ func (s *peerStore) peerDetailsCodecToPeerDetails(pd peerDetailsCodec) (*peerDet
 		encpubkeys[addr] = crypto.AsymEncPubkeyFromBytes(bytes)
 	}
 
+	var addrs []types.Address
+	for _, addr := range pd.Addresses {
+		addr, err := types.AddressFromHex(addr)
+		if err != nil {
+			continue
+		}
+		addrs = append(addrs, addr)
+	}
+
 	return &peerDetails{
 		peerStore:      s,
 		dialInfo:       pd.DialInfo,
 		deviceUniqueID: pd.DeviceUniqueID,
-		addresses:      utils.NewAddressSet(pd.Addresses),
+		addresses:      utils.NewAddressSet(addrs),
 		sigpubkeys:     sigpubkeys,
 		encpubkeys:     encpubkeys,
 		stateURIs:      utils.NewStringSet(pd.StateURIs),
@@ -454,10 +462,15 @@ func (s *peerStore) savePeerDetails(peerDetails *peerDetails) error {
 	dialInfoHash := s.dialInfoHash(peerDetails.dialInfo)
 	peerKeypath := state.Keypath("peers").Pushs(dialInfoHash)
 
+	var addrs []string
+	for _, addr := range peerDetails.addresses.Slice() {
+		addrs = append(addrs, addr.Hex())
+	}
+
 	pdc := &peerDetailsCodec{
 		DialInfo:       peerDetails.dialInfo,
 		DeviceUniqueID: peerDetails.deviceUniqueID,
-		Addresses:      peerDetails.addresses.Slice(),
+		Addresses:      addrs,
 		StateURIs:      peerDetails.stateURIs.Slice(),
 		LastContact:    uint64(peerDetails.lastContact.UTC().Unix()),
 		LastFailure:    uint64(peerDetails.lastFailure.UTC().Unix()),
@@ -497,7 +510,8 @@ func (s *peerStore) deletePeers(dialInfos []PeerDialInfo) error {
 func (s *peerStore) DebugPrint() {
 	node := s.state.State(false)
 	defer node.Close()
-	node.NodeAt(state.Keypath("peers"), nil).DebugPrint(func(msg string, args ...interface{}) { fmt.Printf(msg, args...) }, true, 0)
+	// node.NodeAt(state.Keypath("peers"), nil).DebugPrint(func(msg string, args ...interface{}) { fmt.Printf(msg, args...) }, true, 0)
+	// s.Debugf("%v", utils.PrettyJSON(node.NodeAt(state.Keypath("peers"), nil)))
 }
 
 type PeerDetails interface {
@@ -505,6 +519,7 @@ type PeerDetails interface {
 	Addresses() []types.Address
 	DialInfo() PeerDialInfo
 	DeviceUniqueID() string
+	SetDeviceUniqueID(id string) error
 	PublicKeys(addr types.Address) (crypto.SigningPublicKey, crypto.AsymEncPubkey)
 	AddStateURI(stateURI string)
 	RemoveStateURI(stateURI string)
@@ -535,7 +550,7 @@ type peerDetails struct {
 type peerDetailsCodec struct {
 	DialInfo       PeerDialInfo      `tree:"dialInfo"`
 	DeviceUniqueID string            `tree:"deviceUniqueID"`
-	Addresses      []types.Address   `tree:"address"`
+	Addresses      []string          `tree:"address"`
 	Sigpubkeys     map[string][]byte `tree:"sigpubkey"`
 	Encpubkeys     map[string][]byte `tree:"encpubkey"`
 	StateURIs      []string          `tree:"stateURIs"`
@@ -550,7 +565,7 @@ func newPeerDetails(peerStore *peerStore, dialInfo PeerDialInfo, deviceUniqueID 
 		dialInfo:       dialInfo,
 		deviceUniqueID: deviceUniqueID,
 		stateURIs:      utils.NewStringSet(nil),
-		backoff:        utils.ExponentialBackoff{Min: 10 * time.Second, Max: 3 * time.Minute},
+		backoff:        utils.ExponentialBackoff{Min: 3 * time.Second, Max: 3 * time.Minute},
 	}
 }
 
@@ -583,6 +598,13 @@ func (p *peerDetails) DeviceUniqueID() string {
 	p.peerStore.muPeers.RLock()
 	defer p.peerStore.muPeers.RUnlock()
 	return p.deviceUniqueID
+}
+
+func (p *peerDetails) SetDeviceUniqueID(id string) error {
+	p.peerStore.muPeers.Lock()
+	defer p.peerStore.muPeers.Unlock()
+	p.deviceUniqueID = id
+	return p.peerStore.savePeerDetails(p)
 }
 
 func (p *peerDetails) AddStateURI(stateURI string) {

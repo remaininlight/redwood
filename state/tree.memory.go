@@ -628,9 +628,9 @@ func (n *MemoryNode) Delete(keypath Keypath, rng *Range) error {
 
 		switch n.nodeTypes[string(absKeypath)] {
 		case NodeTypeMap:
-			n.contentLengths[string(absKeypath)] -= rng.Size()
+			n.contentLengths[string(absKeypath)] -= rng.Length()
 		case NodeTypeSlice:
-			n.contentLengths[string(absKeypath)] -= rng.Size()
+			n.contentLengths[string(absKeypath)] -= rng.Length()
 		case NodeTypeValue:
 			if s, isString := n.values[string(absKeypath)].(string); isString {
 				if !rng.ValidForLength(uint64(len(s))) {

@@ -20,11 +20,16 @@ type Store interface {
 	AddSubscribedStateURI(stateURI string) error
 	RemoveSubscribedStateURI(stateURI string) error
 	OnNewSubscribedStateURI(handler func(stateURI string)) (unsubscribe func())
+
 	MaxPeersPerSubscription() uint64
 	SetMaxPeersPerSubscription(max uint64) error
+
 	TxSeenByPeer(deviceSpecificID, stateURI string, txID types.ID) bool
 	MarkTxSeenByPeer(deviceSpecificID, stateURI string, txID types.ID) error
 	PruneTxSeenRecordsOlderThan(threshold time.Duration) error
+
+	EncryptedTx(stateURI string, txID types.ID) (EncryptedTx, error)
+	SaveEncryptedTx(stateURI string, txID types.ID, etx EncryptedTx) error
 }
 
 type store struct {
@@ -48,12 +53,14 @@ type storeData struct {
 	SubscribedStateURIs     utils.StringSet
 	MaxPeersPerSubscription uint64
 	TxsSeenByPeers          map[string]map[string]map[types.ID]uint64
+	EncryptedTxs            map[string]map[types.ID]EncryptedTx
 }
 
 type storeDataCodec struct {
 	SubscribedStateURIs     map[string]bool                         `tree:"subscribedStateURIs"`
 	MaxPeersPerSubscription uint64                                  `tree:"maxPeersPerSubscription"`
 	TxsSeenByPeers          map[string]map[string]map[string]uint64 `tree:"txsSeenByPeers"`
+	EncryptedTxs            map[string]map[string]EncryptedTx       `tree:"encryptedTxs"`
 }
 
 var storeRootKeypath = state.Keypath("prototree")
@@ -117,12 +124,25 @@ func (s *store) loadData() error {
 		subscribedStateURIs = append(subscribedStateURIs, stateURI)
 	}
 
+	encryptedTxs := make(map[string]map[types.ID]EncryptedTx)
+	for stateURI := range codec.EncryptedTxs {
+		encryptedTxs[stateURI] = make(map[types.ID]EncryptedTx)
+		for txIDStr, etx := range codec.EncryptedTxs[stateURI] {
+			txID, err := types.IDFromHex(txIDStr)
+			if err != nil {
+				return err
+			}
+			encryptedTxs[stateURI][txID] = etx
+		}
+	}
+
 	s.dataMu.Lock()
 	defer s.dataMu.Unlock()
 	s.data = storeData{
 		SubscribedStateURIs:     utils.NewStringSet(subscribedStateURIs),
 		MaxPeersPerSubscription: codec.MaxPeersPerSubscription,
 		TxsSeenByPeers:          txsSeenByPeers,
+		EncryptedTxs:            encryptedTxs,
 	}
 	return nil
 }
@@ -348,4 +368,43 @@ func (s *store) PruneTxSeenRecordsOlderThan(threshold time.Duration) error {
 		}
 	}
 	return node.Save()
+}
+
+func (s *store) EncryptedTx(stateURI string, txID types.ID) (EncryptedTx, error) {
+	s.dataMu.RLock()
+	defer s.dataMu.RUnlock()
+
+	_, exists := s.data.EncryptedTxs[stateURI]
+	if !exists {
+		return EncryptedTx{}, types.Err404
+	}
+	etx, exists := s.data.EncryptedTxs[stateURI][txID]
+	if !exists {
+		return EncryptedTx{}, types.Err404
+	}
+	return etx, nil
+}
+
+func (s *store) SaveEncryptedTx(stateURI string, txID types.ID, etx EncryptedTx) error {
+	s.dataMu.Lock()
+	defer s.dataMu.Unlock()
+
+	_, exists := s.data.EncryptedTxs[stateURI]
+	if !exists {
+		s.data.EncryptedTxs[stateURI] = make(map[types.ID]EncryptedTx)
+	}
+	s.data.EncryptedTxs[stateURI][txID] = etx
+
+	node := s.db.State(true)
+	defer node.Close()
+
+	err := node.Set(s.keypathForEncryptedTx(stateURI, txID), nil, etx)
+	if err != nil {
+		return err
+	}
+	return node.Save()
+}
+
+func (s *store) keypathForEncryptedTx(stateURI string, txID types.ID) state.Keypath {
+	return storeRootKeypath.Pushs("encryptedTxs").Pushs(stateURI).Pushs(txID.Hex())
 }

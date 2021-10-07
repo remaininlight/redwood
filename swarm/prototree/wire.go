@@ -6,6 +6,7 @@ import (
 	"github.com/pkg/errors"
 
 	"redwood.dev/state"
+	"redwood.dev/swarm/protohush"
 	"redwood.dev/tree"
 	"redwood.dev/types"
 )
@@ -18,6 +19,8 @@ type SubscriptionMsg struct {
 	Leaves      []types.ID   `json:"leaves,omitempty"`
 	Error       error        `json:"error,omitempty"`
 }
+
+type EncryptedTx = protohush.GroupMessage
 
 type SubscriptionType uint8
 
@@ -64,11 +67,4 @@ func (t SubscriptionType) String() string {
 
 func (t SubscriptionType) Includes(x SubscriptionType) bool {
 	return t&x == x
-}
-
-type EncryptedTx struct {
-	TxID             types.ID      `json:"txID"`
-	EncryptedPayload []byte        `json:"encryptedPayload"`
-	SenderPublicKey  []byte        `json:"senderPublicKey"`
-	RecipientAddress types.Address `json:"recipientAddress"`
 }

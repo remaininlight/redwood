@@ -6,14 +6,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"io/ioutil"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/pkg/errors"
 
 	"redwood.dev/blob"
-	"redwood.dev/crypto"
-	"redwood.dev/state"
 	"redwood.dev/swarm"
 	"redwood.dev/swarm/protoauth"
 	"redwood.dev/swarm/protoblob"
@@ -44,8 +44,12 @@ var (
 	_ prototree.TreePeerConn = (*peerConn)(nil)
 )
 
-func (peer *peerConn) DeviceSpecificID() string {
-	return peer.sessionID.Hex()
+func (p *peerConn) DeviceSpecificID() string {
+	// if p.sessionID == (types.ID{}) {
+	// 	return ""
+	// }
+	// return p.sessionID.Hex()
+	return p.DialInfo().String()
 }
 
 func (p *peerConn) Transport() swarm.Transport {
@@ -82,12 +86,18 @@ func (p *peerConn) Subscribe(ctx context.Context, stateURI string) (_ prototree.
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, errors.Wrapf(err, "error subscribing to peer (%v) (state URI: %v)", p.DialInfo().DialAddr, stateURI)
-	} else if resp.StatusCode != 200 {
-		return nil, errors.Wrapf(err, "error subscribing to peer (%v) (state URI: %v)", p.DialInfo().DialAddr, stateURI)
 	}
+	defer resp.Body.Close()
 
 	p.t.storeAltSvcHeaderPeers(resp.Header)
 
+	bodyBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != 200 {
+		return nil, errors.Errorf("error subscribing to peer (%v) (state URI: %v): %v", p.DialInfo().DialAddr, stateURI, string(bodyBytes))
+	}
 	return &httpReadableSubscription{
 		client:  &client,
 		peer:    p,
@@ -96,38 +106,50 @@ func (p *peerConn) Subscribe(ctx context.Context, stateURI string) (_ prototree.
 	}, nil
 }
 
-func (p *peerConn) Put(ctx context.Context, tx *tree.Tx, state state.Node, leaves []types.ID) (err error) {
+func (p *peerConn) SendTx(ctx context.Context, tx tree.Tx) (err error) {
+	if !p.Dialable() || !p.Ready() {
+		return nil
+	}
+
 	defer func() { p.UpdateConnStats(err == nil) }()
 
 	ctx, cancel := utils.CombinedContext(ctx, p.t.Ctx(), 10*time.Second)
 	defer cancel()
 
-	if p.DialInfo().DialAddr == "" {
-		p.t.Warn("peer has no DialAddr")
+	req, err := putRequestFromTx(ctx, tx, p.DialInfo().DialAddr)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
+	resp, err := p.t.doRequest(req)
+	if err != nil {
+		return errors.Wrapf(err, "error PUTting tx to peer (%v)", p.DialInfo().DialAddr)
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
+func (p *peerConn) SendPrivateTx(ctx context.Context, encryptedTx prototree.EncryptedTx) (err error) {
+	if !p.Dialable() || !p.Ready() {
 		return nil
 	}
 
-	identity, err := p.t.keyStore.IdentityWithAddress(tx.From)
+	defer func() { p.UpdateConnStats(err == nil) }()
+
+	ctx, cancel := utils.CombinedContext(ctx, p.t.Ctx(), 10*time.Second)
+	defer cancel()
+
+	var body bytes.Buffer
+	err = json.NewEncoder(&body).Encode(encryptedTx)
 	if err != nil {
 		return err
 	}
 
-	var (
-		peerSigPubkey crypto.SigningPublicKey
-		peerEncPubkey crypto.AsymEncPubkey
-	)
-	if tx.IsPrivate() {
-		peerAddrs := types.OverlappingAddresses(tx.Recipients, p.Addresses())
-		if len(peerAddrs) == 0 {
-			return errors.New("tx not intended for this peer")
-		}
-		peerSigPubkey, peerEncPubkey = p.PublicKeys(peerAddrs[0])
-	}
-
-	req, err := putRequestFromTx(ctx, tx, p.DialInfo().DialAddr, identity.AsymEncKeypair, peerSigPubkey.Address(), peerEncPubkey)
+	req, err := http.NewRequest("PUT", p.DialInfo().DialAddr, &body)
 	if err != nil {
 		return errors.WithStack(err)
 	}
+	req.Header.Set("Private", "true")
 
 	resp, err := p.t.doRequest(req)
 	if err != nil {
@@ -175,11 +197,6 @@ func (p *peerConn) ChallengeIdentity(challengeMsg protoauth.ChallengeMsg) (err e
 	defer utils.WithStack(&err)
 	defer func() { p.UpdateConnStats(err == nil) }()
 
-	if p.DialInfo().DialAddr == "" {
-		p.t.Warn("peer has no DialAddr")
-		return nil
-	}
-
 	ctx, cancel := context.WithTimeout(p.t.Ctx(), 10*time.Second)
 	defer cancel()
 
@@ -188,6 +205,27 @@ func (p *peerConn) ChallengeIdentity(challengeMsg protoauth.ChallengeMsg) (err e
 		return err
 	}
 	req.Header.Set("Challenge", hex.EncodeToString(challengeMsg))
+
+	u, err := url.Parse(p.DialInfo().DialAddr)
+	if err != nil {
+		return err
+	}
+	for _, c := range p.t.cookieJar.Cookies(u) {
+		req.AddCookie(c)
+	}
+
+	// if p.DeviceUniqueID() == (types.ID{}).Hex() {
+	// 	p.t.Successf("XYZZY 1 <%v>", p.DeviceUniqueID())
+	// 	deviceSpecificID, err := p.t.setSessionIDCookieOnRequest(req)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	err = p.SetDeviceUniqueID(deviceSpecificID.Hex())
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	p.t.Successf("XYZZY 2 <%v>", p.DeviceUniqueID())
+	// }
 
 	resp, err := p.t.doRequest(req)
 	if err != nil {

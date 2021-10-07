@@ -227,26 +227,26 @@ func (s *HTTPServer) SendTx(r *http.Request, args *SendTxArgs, resp *SendTxRespo
 	return s.treeProto.SendTx(context.Background(), args.Tx)
 }
 
-type (
-	PrivateTreeMembersArgs struct {
-		StateURI string
-	}
-	PrivateTreeMembersResponse struct {
-		Members []types.Address
-	}
-)
+// type (
+// 	PrivateTreeMembersArgs struct {
+// 		StateURI string
+// 	}
+// 	PrivateTreeMembersResponse struct {
+// 		Members []types.Address
+// 	}
+// )
 
-func (s *HTTPServer) PrivateTreeMembers(r *http.Request, args *PrivateTreeMembersArgs, resp *PrivateTreeMembersResponse) error {
-	if s.controllerHub == nil {
-		return types.ErrUnsupported
-	}
-	members, err := s.controllerHub.Members(args.StateURI)
-	if err != nil {
-		return err
-	}
-	resp.Members = members.Slice()
-	return nil
-}
+// func (s *HTTPServer) PrivateTreeMembers(r *http.Request, args *PrivateTreeMembersArgs, resp *PrivateTreeMembersResponse) error {
+// 	if s.controllerHub == nil {
+// 		return types.ErrUnsupported
+// 	}
+// 	members, err := s.controllerHub.Members(args.StateURI)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	resp.Members = members.Slice()
+// 	return nil
+// }
 
 type (
 	PeersArgs struct {

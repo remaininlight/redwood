@@ -11,17 +11,20 @@ type (
 		muIncomingIndividualSessionProposalCallbacks sync.RWMutex
 		muIncomingIndividualSessionApprovalCallbacks sync.RWMutex
 		muIncomingIndividualMessageCallbacks         sync.RWMutex
+		muIncomingGroupMessageCallbacks              sync.RWMutex
 
 		incomingDHPubkeyExchangeCallbacks          []IncomingDHPubkeyAttestationsCallback
 		incomingIndividualSessionProposalCallbacks []IncomingIndividualSessionProposalCallback
 		incomingIndividualSessionApprovalCallbacks []IncomingIndividualSessionApprovalCallback
 		incomingIndividualMessageCallbacks         []IncomingIndividualMessageCallback
+		incomingGroupMessageCallbacks              []IncomingGroupMessageCallback
 	}
 
 	IncomingDHPubkeyAttestationsCallback      func(ctx context.Context, attestations []DHPubkeyAttestation, peer HushPeerConn)
 	IncomingIndividualSessionProposalCallback func(ctx context.Context, encryptedProposal []byte, alice HushPeerConn)
 	IncomingIndividualSessionApprovalCallback func(ctx context.Context, approval IndividualSessionApproval, bob HushPeerConn)
 	IncomingIndividualMessageCallback         func(ctx context.Context, msg IndividualMessage, peer HushPeerConn)
+	IncomingGroupMessageCallback              func(ctx context.Context, msg GroupMessage, peer HushPeerConn)
 )
 
 func (t *BaseHushTransport) OnIncomingDHPubkeyAttestations(handler IncomingDHPubkeyAttestationsCallback) {
@@ -103,6 +106,28 @@ func (t *BaseHushTransport) HandleIncomingIndividualMessage(ctx context.Context,
 	var wg sync.WaitGroup
 	wg.Add(len(t.incomingIndividualMessageCallbacks))
 	for _, handler := range t.incomingIndividualMessageCallbacks {
+		handler := handler
+		go func() {
+			defer wg.Done()
+			handler(ctx, msg, peerConn)
+		}()
+	}
+	wg.Wait()
+}
+
+func (t *BaseHushTransport) OnIncomingGroupMessage(handler IncomingGroupMessageCallback) {
+	t.muIncomingGroupMessageCallbacks.Lock()
+	defer t.muIncomingGroupMessageCallbacks.Unlock()
+	t.incomingGroupMessageCallbacks = append(t.incomingGroupMessageCallbacks, handler)
+}
+
+func (t *BaseHushTransport) HandleIncomingGroupMessage(ctx context.Context, msg GroupMessage, peerConn HushPeerConn) {
+	t.muIncomingGroupMessageCallbacks.RLock()
+	defer t.muIncomingGroupMessageCallbacks.RUnlock()
+
+	var wg sync.WaitGroup
+	wg.Add(len(t.incomingGroupMessageCallbacks))
+	for _, handler := range t.incomingGroupMessageCallbacks {
 		handler := handler
 		go func() {
 			defer wg.Done()

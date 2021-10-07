@@ -85,6 +85,7 @@ func (bp *blobProtocol) Start() error {
 	bp.periodicallyFetchMissingBlobs()
 
 	for _, tpt := range bp.transports {
+		bp.Infof(0, "registering %v", tpt.Name())
 		tpt.OnBlobManifestRequest(bp.handleBlobManifestRequest)
 		tpt.OnBlobChunkRequest(bp.handleBlobChunkRequest)
 	}

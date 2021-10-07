@@ -59,10 +59,10 @@ func makeTxKey(stateURI string, txID types.ID) []byte {
 	return append([]byte("tx:"+stateURI+":"), txID[:]...)
 }
 
-func (p *badgerTxStore) AddTx(tx *Tx) (err error) {
+func (p *badgerTxStore) AddTx(tx Tx) (err error) {
 	defer utils.Annotate(&err, "badgerTxStore#AddTx")
 
-	bs, err := tx.MarshalProto()
+	bs, err := tx.Marshal()
 	if err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func (p *badgerTxStore) AddTx(tx *Tx) (err error) {
 				}
 				var parentTx Tx
 				err = item.Value(func(val []byte) error {
-					return parentTx.UnmarshalProto(val)
+					return parentTx.Unmarshal(val)
 				})
 				if err != nil {
 					return err
@@ -92,7 +92,7 @@ func (p *badgerTxStore) AddTx(tx *Tx) (err error) {
 
 				parentTx.Children = utils.NewIDSet(parentTx.Children).Add(tx.ID).Slice()
 
-				parentBytes, err := parentTx.MarshalProto()
+				parentBytes, err := parentTx.Marshal()
 				if err != nil {
 					return err
 				}
@@ -145,7 +145,7 @@ func (p *badgerTxStore) TxExists(stateURI string, txID types.ID) (bool, error) {
 	return exists, err
 }
 
-func (p *badgerTxStore) FetchTx(stateURI string, txID types.ID) (*Tx, error) {
+func (p *badgerTxStore) FetchTx(stateURI string, txID types.ID) (Tx, error) {
 	var bs []byte
 	err := p.db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get(makeTxKey(stateURI, txID))
@@ -161,12 +161,12 @@ func (p *badgerTxStore) FetchTx(stateURI string, txID types.ID) (*Tx, error) {
 		})
 	})
 	if err != nil {
-		return nil, err
+		return Tx{}, err
 	}
 
 	var tx Tx
-	err = tx.UnmarshalProto(bs)
-	return &tx, err
+	err = tx.Unmarshal(bs)
+	return tx, err
 }
 
 func (p *badgerTxStore) AllTxsForStateURI(stateURI string, fromTxID types.ID) TxIterator {
@@ -174,10 +174,7 @@ func (p *badgerTxStore) AllTxsForStateURI(stateURI string, fromTxID types.ID) Tx
 		fromTxID = GenesisTxID
 	}
 
-	txIter := &txIterator{
-		ch:       make(chan *Tx),
-		chCancel: make(chan struct{}),
-	}
+	txIter := NewTxIterator()
 
 	go func() {
 		defer close(txIter.ch)
@@ -201,7 +198,7 @@ func (p *badgerTxStore) AllTxsForStateURI(stateURI string, fromTxID types.ID) Tx
 
 				var tx Tx
 				err = item.Value(func(val []byte) error {
-					return tx.UnmarshalProto(val)
+					return tx.Unmarshal(val)
 				})
 				if err != nil {
 					return err
@@ -215,7 +212,7 @@ func (p *badgerTxStore) AllTxsForStateURI(stateURI string, fromTxID types.ID) Tx
 				// }
 
 				select {
-				case <-txIter.chCancel:
+				case <-txIter.chClose:
 					return nil
 				case txIter.ch <- &tx:
 				}

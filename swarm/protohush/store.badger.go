@@ -454,18 +454,6 @@ func (s *store) LatestIndividualSessionWithUsers(sessionType string, aliceAddr, 
 		return IndividualSessionProposal{}, types.Err404
 	}
 
-	// length, err := node.NodeAt(keypath, nil).Length()
-	// if err != nil {
-	// 	return IndividualSessionProposal{}, err
-	// }
-
-	// var ss []IndividualSessionProposal
-	// err = node.NodeAt(keypath, &state.Range{Start: int64(length - 1), End: int64(length)}).Scan(&ss)
-	// if err != nil {
-	// 	return IndividualSessionProposal{}, err
-	// }
-	// return ss[0], nil
-
 	iter := node.ChildIterator(individualSessionsKeypathForUsersAndType(sessionType, aliceAddr, bobAddr), false, 0)
 	defer iter.Close()
 
@@ -482,13 +470,6 @@ func (s *store) LatestIndividualSessionWithUsers(sessionType string, aliceAddr, 
 		return IndividualSessionProposal{}, err
 	}
 	return session, nil
-
-	// return IndividualSessionID{
-	// 	SessionType: sessionType,
-	// 	AliceAddr:   aliceAddr,
-	// 	BobAddr:     bobAddr,
-	// 	Epoch:       maxEpoch,
-	// }, nil
 }
 
 func (s *store) IndividualSession(id IndividualSessionID) (IndividualSessionProposal, error) {
@@ -638,6 +619,166 @@ func (s *store) DeleteIncomingIndividualMessage(msg IndividualMessage) error {
 	defer node.Close()
 
 	err := node.Delete(incomingIndividualMessageKeypathFor(msg), nil)
+	if err != nil {
+		return err
+	}
+	return node.Save()
+}
+
+func (s *store) OutgoingGroupMessageIntentIDs() (utils.StringSet, error) {
+	node := s.db.State(false)
+	defer node.Close()
+
+	ids := utils.NewStringSet(nil)
+	for _, subkey := range node.NodeAt(outgoingGroupMessageIntentsKeypath, nil).Subkeys() {
+		ids.Add(subkey.String())
+	}
+	return ids, nil
+}
+
+func (s *store) OutgoingGroupMessageIntent(sessionType, id string) (GroupMessageIntent, error) {
+	node := s.db.State(false)
+	defer node.Close()
+
+	keypath := outgoingGroupMessageIntentKeypathFor(sessionType, id)
+
+	exists, err := node.Exists(keypath)
+	if err != nil {
+		return GroupMessageIntent{}, err
+	} else if !exists {
+		return GroupMessageIntent{}, types.Err404
+	}
+
+	var intent GroupMessageIntent
+	err = node.NodeAt(keypath, nil).Scan(&intent)
+	if err != nil {
+		return GroupMessageIntent{}, err
+	}
+	return intent, nil
+}
+
+func (s *store) SaveOutgoingGroupMessageIntent(intent GroupMessageIntent) error {
+	node := s.db.State(true)
+	defer node.Close()
+
+	err := node.Set(outgoingGroupMessageIntentKeypathFor(intent.SessionType, intent.ID), nil, intent)
+	if err != nil {
+		return err
+	}
+	return node.Save()
+}
+
+func (s *store) DeleteOutgoingGroupMessageIntent(sessionType, id string) error {
+	node := s.db.State(true)
+	defer node.Close()
+
+	err := node.Delete(outgoingGroupMessageIntentKeypathFor(sessionType, id), nil)
+	if err != nil {
+		return err
+	}
+	return node.Save()
+}
+
+func (s *store) OutgoingGroupMessageIDsForRecipient(recipient types.Address) (utils.IDSet, error) {
+	node := s.db.State(false)
+	defer node.Close()
+
+	ids := utils.NewIDSet(nil)
+	for _, subkey := range node.NodeAt(outgoingGroupMessagesKeypathForRecipient(recipient), nil).Subkeys() {
+		hash, err := types.IDFromHex(subkey.String())
+		if err != nil {
+			return nil, err
+		}
+		ids.Add(hash)
+	}
+	return ids, nil
+}
+
+func (s *store) OutgoingGroupMessageForRecipient(id types.ID, recipient types.Address) (GroupMessage, error) {
+	node := s.db.State(false)
+	defer node.Close()
+
+	keypath := outgoingGroupMessageKeypathFor(recipient, id)
+
+	exists, err := node.Exists(keypath)
+	if err != nil {
+		return GroupMessage{}, err
+	} else if !exists {
+		return GroupMessage{}, types.Err404
+	}
+
+	var msg GroupMessage
+	err = node.NodeAt(keypath, nil).Scan(&msg)
+	if err != nil {
+		return GroupMessage{}, err
+	}
+	return msg, nil
+}
+
+func (s *store) SaveOutgoingGroupMessageForRecipients(id types.ID, msg GroupMessage, recipients []types.Address) error {
+	node := s.db.State(true)
+	defer node.Close()
+
+	for _, recipient := range recipients {
+		err := node.Set(outgoingGroupMessageKeypathFor(recipient, id), nil, msg)
+		if err != nil {
+			return err
+		}
+	}
+	return node.Save()
+}
+
+func (s *store) DeleteOutgoingGroupMessageForRecipient(id types.ID, recipient types.Address) error {
+	node := s.db.State(true)
+	defer node.Close()
+
+	err := node.Delete(outgoingGroupMessageKeypathFor(recipient, id), nil)
+	if err != nil {
+		return err
+	}
+	return node.Save()
+}
+
+func (s *store) IncomingGroupMessages() ([]GroupMessage, error) {
+	node := s.db.State(false)
+	defer node.Close()
+
+	var messagesMap map[string]GroupMessage
+	err := node.NodeAt(incomingGroupMessagesKeypath, nil).Scan(&messagesMap)
+	if err != nil {
+		return nil, err
+	}
+	var messages []GroupMessage
+	for _, msg := range messagesMap {
+		messages = append(messages, msg)
+	}
+	return messages, nil
+}
+
+func (s *store) SaveIncomingGroupMessage(sender types.Address, msg GroupMessage) error {
+	node := s.db.State(true)
+	defer node.Close()
+
+	msgHash, err := msg.Hash()
+	if err != nil {
+		return err
+	}
+	err = node.Set(incomingGroupMessageKeypathFor(msgHash), nil, msg)
+	if err != nil {
+		return err
+	}
+	return node.Save()
+}
+
+func (s *store) DeleteIncomingGroupMessage(msg GroupMessage) error {
+	node := s.db.State(true)
+	defer node.Close()
+
+	msgHash, err := msg.Hash()
+	if err != nil {
+		return err
+	}
+	err = node.Delete(incomingGroupMessageKeypathFor(msgHash), nil)
 	if err != nil {
 		return err
 	}
@@ -896,6 +1037,12 @@ var (
 	outgoingIndividualMessagesKeypath = rootKeypath.Copy().Pushs("outgoing-individual-messages")
 	incomingIndividualMessagesKeypath = rootKeypath.Copy().Pushs("incoming-individual-messages")
 
+	outgoingGroupMessagesKeypath       = rootKeypath.Copy().Pushs("outgoing-group-messages")
+	outgoingGroupMessageIntentsKeypath = outgoingGroupMessagesKeypath.Copy().Pushs("intents")
+	outgoingGroupMessageSendsKeypath   = outgoingGroupMessagesKeypath.Copy().Pushs("sends")
+
+	incomingGroupMessagesKeypath = rootKeypath.Copy().Pushs("incoming-group-messages")
+
 	sharedKeysKeypath  = rootKeypath.Copy().Pushs("sks")
 	sessionsKeypath    = rootKeypath.Copy().Pushs("sessions")
 	messageKeysKeypath = rootKeypath.Copy().Pushs("mks")
@@ -959,9 +1106,21 @@ func incomingIndividualMessageKeypathFor(msg IndividualMessage) state.Keypath {
 	return incomingIndividualMessagesKeypath.Pushs(msg.SessionHash.Hex()).PushIndex(uint64(msg.Header.N))
 }
 
-// func sharedKeyKeypathFor(sessionID []byte) state.Keypath {
-// 	return sharedKeysKeypath.Push(sessionID)
-// }
+func outgoingGroupMessageIntentKeypathFor(sessionType, id string) state.Keypath {
+	return outgoingGroupMessageIntentsKeypath.Pushs(sessionType).Pushs(id)
+}
+
+func outgoingGroupMessageKeypathFor(recipient types.Address, id types.ID) state.Keypath {
+	return outgoingGroupMessagesKeypathForRecipient(recipient).Pushs(id.Hex())
+}
+
+func outgoingGroupMessagesKeypathForRecipient(recipient types.Address) state.Keypath {
+	return outgoingGroupMessageSendsKeypath.Pushs(recipient.Hex())
+}
+
+func incomingGroupMessageKeypathFor(msgHash types.Hash) state.Keypath {
+	return incomingGroupMessagesKeypath.Pushs(msgHash.Hex())
+}
 
 func ratchetSessionKeypathFor(sessionID []byte) state.Keypath {
 	return sessionsKeypath.Push(sessionID)

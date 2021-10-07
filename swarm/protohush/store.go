@@ -51,6 +51,19 @@ type Store interface {
 	SaveIncomingIndividualMessage(sender types.Address, msg IndividualMessage) error
 	DeleteIncomingIndividualMessage(msg IndividualMessage) error
 
+	// Group messages
+	OutgoingGroupMessageIntent(sessionType, id string) (GroupMessageIntent, error)
+	SaveOutgoingGroupMessageIntent(intent GroupMessageIntent) error
+	DeleteOutgoingGroupMessageIntent(sessionType, id string) error
+	// SaveOutgoingGroupMessageForRecipients(id types.ID, msg GroupMessage, recipients []types.Address) error
+	// OutgoingGroupMessageIDsForRecipient(recipient types.Address) (utils.IDSet, error)
+	// OutgoingGroupMessageForRecipient(id types.ID, recipient types.Address) (GroupMessage, error)
+	// DeleteOutgoingGroupMessageForRecipient(id types.ID, recipient types.Address) error
+
+	IncomingGroupMessages() ([]GroupMessage, error)
+	SaveIncomingGroupMessage(sender types.Address, msg GroupMessage) error
+	DeleteIncomingGroupMessage(msg GroupMessage) error
+
 	DebugPrint()
 
 	//--------------------

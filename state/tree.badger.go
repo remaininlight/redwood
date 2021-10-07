@@ -207,6 +207,9 @@ func (tx *DBNode) Keypath() Keypath {
 }
 
 func (n *DBNode) NodeAt(keypath Keypath, rng *Range) Node {
+	if keypath.Equals(KeypathSeparator) {
+		keypath = nil
+	}
 	return &DBNode{
 		tx:             n.tx,
 		rootKeypath:    n.rootKeypath.Push(keypath),
@@ -351,13 +354,13 @@ func (tx *DBNode) Value(relKeypath Keypath, rng *Range) (_ interface{}, _ bool, 
 
 	if rootNodeType == NodeTypeMap {
 		if rng != nil {
-			goParents[""] = make(map[string]interface{}, rng.Size())
+			goParents[""] = make(map[string]interface{}, rng.Length())
 		} else {
 			goParents[""] = make(map[string]interface{}, length)
 		}
 	} else if rootNodeType == NodeTypeSlice {
 		if rng != nil {
-			goParents[""] = make([]interface{}, rng.Size())
+			goParents[""] = make([]interface{}, rng.Length())
 			startIdx, _ = rng.IndicesForLength(length)
 		} else {
 			goParents[""] = make([]interface{}, length)
@@ -898,7 +901,7 @@ func (tx *DBNode) setRangeBytes(absKeypath Keypath, rng *Range, encodedVal []byt
 
 	startIdx, endIdx := rng.IndicesForLength(length)
 	oldVal := data
-	newLen := 2 + length - rng.Size() + uint64(len(spliceVal))
+	newLen := 2 + length - rng.Length() + uint64(len(spliceVal))
 	newVal := make([]byte, newLen)
 	newVal[0] = 'v'
 	if valueType == ValueTypeString {
@@ -926,7 +929,7 @@ func (tx *DBNode) setRangeSlice(absKeypath Keypath, rng *Range, encodedVal []byt
 
 	absKeypath = tx.addKeyPrefix(absKeypath)
 
-	newLen := oldLen - rng.Size() + uint64(len(spliceVal))
+	newLen := oldLen - rng.Length() + uint64(len(spliceVal))
 	shrink := newLen < oldLen
 	startIdx, endIdx := rng.IndicesForLength(oldLen)
 
@@ -1327,7 +1330,7 @@ func (tx *DBNode) delete(absKeypath Keypath, rng *Range) (err error) {
 	// Re-number the trailing entries if the root node is a slice
 	if rootNodeType == NodeTypeSlice && endIdx < length {
 		renumberRange := &Range{int64(endIdx), int64(length)}
-		delta := -int64(rng.Size())
+		delta := -int64(rng.Length())
 
 		err := tx.scanChildrenForward(NodeTypeSlice, absKeypath, renumberRange, length, true, func(absChildKeypath Keypath, item *badger.Item) error {
 			valueBuf, err := item.ValueCopy(nil)
@@ -1355,7 +1358,7 @@ func (tx *DBNode) delete(absKeypath Keypath, rng *Range) (err error) {
 
 	// Set new length
 	if rng != nil && (rootNodeType == NodeTypeSlice || rootNodeType == NodeTypeMap) {
-		newLen := length - rng.Size()
+		newLen := length - rng.Length()
 		encoded, err := encodeNode(rootNodeType, ValueTypeInvalid, newLen, nil)
 		if err != nil {
 			return err
@@ -1474,13 +1477,13 @@ func (tx *DBNode) copyToMemory(absKeypath Keypath, rng *Range) (n Node, err erro
 
 	if rootNodeType == NodeTypeMap {
 		if rng != nil {
-			mNode.contentLengths[""] = rng.Size()
+			mNode.contentLengths[""] = rng.Length()
 		} else {
 			mNode.contentLengths[""] = length
 		}
 	} else if rootNodeType == NodeTypeSlice {
 		if rng != nil {
-			mNode.contentLengths[""] = rng.Size()
+			mNode.contentLengths[""] = rng.Length()
 			startIdx, _ = rng.IndicesForLength(length)
 		} else {
 			mNode.contentLengths[""] = length
@@ -1830,7 +1833,7 @@ func (n *DBNode) scanChildrenForward(
 		if rng != nil {
 			if !rng.ValidForLength(length) {
 				return ErrInvalidRange
-			} else if rng.Size() == 0 {
+			} else if rng.Length() == 0 {
 				return nil
 			}
 			var startIdx uint64
@@ -1848,7 +1851,7 @@ func (n *DBNode) scanChildrenForward(
 		if rng != nil {
 			if !rng.ValidForLength(length) {
 				return ErrInvalidRange
-			} else if rng.Size() == 0 {
+			} else if rng.Length() == 0 {
 				return nil
 			}
 			startIdx, endIdx := rng.IndicesForLength(length)
@@ -2188,7 +2191,7 @@ func decodeGoValue(nodeType NodeType, valueType ValueType, length uint64, rng *R
 			if !rng.ValidForLength(length) {
 				return nil, errors.WithStack(ErrInvalidRange)
 			}
-			length = rng.Size()
+			length = rng.Length()
 		}
 		return make(map[string]interface{}), nil
 
@@ -2197,7 +2200,7 @@ func decodeGoValue(nodeType NodeType, valueType ValueType, length uint64, rng *R
 			if !rng.ValidForLength(length) {
 				return nil, errors.WithStack(ErrInvalidRange)
 			}
-			length = rng.Size()
+			length = rng.Length()
 		}
 		return make([]interface{}, length), nil
 

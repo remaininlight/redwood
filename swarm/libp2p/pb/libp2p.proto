@@ -21,53 +21,59 @@ option (gogoproto.unmarshaler_all) = true;
 
 message BlobMessage {
     oneof payload {
-        FetchBlobManifest fetchBlobManifest = 1;
-        SendBlobManifest sendBlobManifest = 2;
-        FetchBlobChunk fetchBlobChunk = 3;
-        SendBlobChunk sendBlobChunk = 4;
+        FetchManifest fetchManifest = 1;
+        SendManifest sendManifest = 2;
+        FetchChunk fetchChunk = 3;
+        SendChunk sendChunk = 4;
     }
-}
 
-message FetchBlobManifest {
-    Redwood.blob.BlobID id = 1;
-}
+    message FetchManifest {
+        Redwood.blob.BlobID id = 1;
+    }
 
-message SendBlobManifest {
-    Redwood.blob.Manifest manifest = 1;
-    bool exists = 2;
-}
+    message SendManifest {
+        Redwood.blob.Manifest manifest = 1;
+        bool exists = 2;
+    }
 
-message FetchBlobChunk {
-    bytes sha3 = 1;
-}
+    message FetchChunk {
+        bytes sha3 = 1;
+    }
 
-message SendBlobChunk {
-    bytes chunk = 1;
-    bool exists = 2;
+    message SendChunk {
+        bytes chunk = 1;
+        bool exists = 2;
+    }
 }
 
 message HushMessage {
     oneof payload {
-        HushDHPubkeyAttestations dhPubkeyAttestations = 1;
-        HushProposeIndividualSession proposeIndividualSession = 2;
-        HushApproveIndividualSession approveIndividualSession = 3;
-        HushSendIndividualMessage sendIndividualMessage = 4;
+        DHPubkeyAttestations dhPubkeyAttestations = 1;
+        ProposeIndividualSession proposeIndividualSession = 2;
+        ApproveIndividualSession approveIndividualSession = 3;
+        SendIndividualMessage sendIndividualMessage = 4;
+        SendGroupMessage sendGroupMessage = 5;
+    }
+
+    message DHPubkeyAttestations {
+        repeated Redwood.swarm.protohush.DHPubkeyAttestation attestations = 1 [(gogoproto.nullable) = false];
+    }
+
+    message ProposeIndividualSession {
+        bytes encryptedProposal = 1;
+    }
+
+    message ApproveIndividualSession {
+        Redwood.swarm.protohush.IndividualSessionApproval approval = 1;
+    }
+
+    message SendIndividualMessage {
+        Redwood.swarm.protohush.IndividualMessage message = 1;
+    }
+
+    message SendGroupMessage {
+        Redwood.swarm.protohush.GroupMessage message = 1;
     }
 }
 
-message HushDHPubkeyAttestations {
-    repeated Redwood.swarm.protohush.DHPubkeyAttestation attestations = 1;
-}
-
-message HushProposeIndividualSession {
-    bytes encryptedProposal = 1;
-}
-
-message HushApproveIndividualSession {
-    Redwood.swarm.protohush.IndividualSessionApproval approval = 1;
-}
-
-message HushSendIndividualMessage {
-    Redwood.swarm.protohush.IndividualMessage message = 1;
-}
 

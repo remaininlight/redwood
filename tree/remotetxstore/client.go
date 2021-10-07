@@ -197,7 +197,7 @@ func (i *txIterator) Next() *tree.Tx {
 	}
 }
 
-func (i *txIterator) Cancel() {
+func (i *txIterator) Close() {
 	close(i.chCancel)
 }
 

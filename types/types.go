@@ -72,6 +72,38 @@ func (id *ID) UnmarshalText(text []byte) error {
 	return nil
 }
 
+func (id ID) Marshal() ([]byte, error) { return id[:], nil }
+
+func (id *ID) MarshalTo(data []byte) (n int, err error) {
+	copy(data, (*id)[:])
+	return len(data), nil
+}
+
+func (id *ID) Unmarshal(data []byte) error {
+	*id = ID{}
+	copy((*id)[:], data)
+	return nil
+}
+
+func (id *ID) Size() int { return len(*id) }
+func (id ID) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + id.Hex() + `"`), nil
+}
+func (id *ID) UnmarshalJSON(data []byte) error {
+	if len(data) < 3 {
+		*id = ID{}
+		return nil
+	}
+	bs, err := hex.DecodeString(string(data[1 : len(data)-1]))
+	if err != nil {
+		return err
+	}
+	*id = IDFromBytes(bs)
+	return err
+}
+func (id ID) Compare(other ID) int { return bytes.Compare(id[:], other[:]) }
+func (id ID) Equal(other ID) bool  { return bytes.Equal(id[:], other[:]) }
+
 type Address [20]byte
 
 func AddressFromHex(hx string) (Address, error) {
@@ -187,24 +219,46 @@ func (sig Signature) Hex() string {
 	return hex.EncodeToString(sig)
 }
 
-func (sig Signature) MarshalJSON() ([]byte, error) {
-	return []byte(`"` + hex.EncodeToString(sig) + `"`), nil
-}
-
-func (sig *Signature) UnmarshalJSON(bs []byte) error {
-	bs, err := hex.DecodeString(string(bs[1 : len(bs)-1]))
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	*sig = bs
-	return nil
-}
-
 func (sig Signature) Copy() Signature {
 	cp := make(Signature, len(sig))
 	copy(cp, sig)
 	return cp
 }
+
+func (sig Signature) Marshal() ([]byte, error) {
+	sig2 := make(Signature, len(sig))
+	copy(sig2, sig)
+	return sig2, nil
+}
+
+func (sig *Signature) MarshalTo(data []byte) (n int, err error) {
+	copy(data, *sig)
+	return len(data), nil
+}
+
+func (sig *Signature) Unmarshal(data []byte) error {
+	*sig = make(Signature, len(data))
+	copy(*sig, data)
+	return nil
+}
+
+func (sig *Signature) Size() int { return len(*sig) }
+func (sig Signature) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + sig.Hex() + `"`), nil
+}
+func (sig *Signature) UnmarshalJSON(data []byte) error {
+	if len(data) < 2 || data[0] != '"' || data[len(data)-1] != '"' {
+		return errors.Errorf(`bad JSON for types.Signature: %v`, string(data))
+	}
+	bs, err := hex.DecodeString(string(data[1 : len(data)-1]))
+	if err != nil {
+		return err
+	}
+	*sig = bs
+	return err
+}
+func (sig Signature) Compare(other Signature) int { return bytes.Compare(sig[:], other[:]) }
+func (sig Signature) Equal(other Signature) bool  { return bytes.Equal(sig[:], other[:]) }
 
 type Hash [32]byte
 
@@ -346,6 +400,12 @@ type gogoprotobufTest interface {
 	Intn(n int) int
 }
 
+func NewPopulatedID(_ gogoprotobufTest) *ID {
+	var id ID
+	copy(id[:], randomBytes(32))
+	return &id
+}
+
 func NewPopulatedHash(_ gogoprotobufTest) *Hash {
 	var h Hash
 	copy(h[:], randomBytes(32))
@@ -356,4 +416,10 @@ func NewPopulatedAddress(_ gogoprotobufTest) *Address {
 	var a Address
 	copy(a[:], randomBytes(20))
 	return &a
+}
+
+func NewPopulatedSignature(_ gogoprotobufTest) *Signature {
+	var sig Signature
+	copy(sig[:], randomBytes(32))
+	return &sig
 }

@@ -207,6 +207,17 @@ func (m IndividualMessage) Hash() (types.Hash, error) {
 	return types.HashBytes(bs), nil
 }
 
+func (m GroupMessage) Hash() (types.Hash, error) {
+	m2 := m
+	m2.Sig = nil
+
+	bs, err := m2.Marshal()
+	if err != nil {
+		return types.Hash{}, err
+	}
+	return types.HashBytes(bs), nil
+}
+
 // func (p SharedKeyProposal) MarshalBinary() ([]byte, error) {
 //     return (&pb.SharedKeyProposal{
 //         SessionID: p.SessionID,

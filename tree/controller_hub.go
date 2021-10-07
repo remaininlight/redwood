@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -14,14 +13,13 @@ import (
 	"redwood.dev/process"
 	"redwood.dev/state"
 	"redwood.dev/types"
-	"redwood.dev/utils"
 )
 
 type ControllerHub interface {
 	process.Interface
 
-	AddTx(tx *Tx) error
-	FetchTx(stateURI string, txID types.ID) (*Tx, error)
+	AddTx(tx Tx) error
+	FetchTx(stateURI string, txID types.ID) (Tx, error)
 	FetchTxs(stateURI string, fromTxID types.ID) TxIterator
 
 	EnsureController(stateURI string) (Controller, error)
@@ -30,13 +28,13 @@ type ControllerHub interface {
 	QueryIndex(stateURI string, version *types.ID, keypath state.Keypath, indexName state.Keypath, queryParam state.Keypath, rng *state.Range) (state.Node, error)
 	Leaves(stateURI string) ([]types.ID, error)
 
-	IsPrivate(stateURI string) (bool, error)
-	IsMember(stateURI string, addr types.Address) (bool, error)
-	Members(stateURI string) (utils.AddressSet, error)
+	// IsPrivate(stateURI string) (bool, error)
+	// IsMember(stateURI string, addr types.Address) (bool, error)
+	// Members(stateURI string) (utils.AddressSet, error)
 
 	BlobReader(refID blob.ID) (io.ReadCloser, int64, error)
 
-	OnNewState(fn func(tx *Tx, root state.Node, leaves []types.ID))
+	OnNewState(fn NewStateCallback)
 }
 
 type controllerHub struct {
@@ -51,7 +49,7 @@ type controllerHub struct {
 	dbRootPath       string
 	encryptionConfig *state.EncryptionConfig
 
-	newStateListeners   []func(tx *Tx, root state.Node, leaves []types.ID)
+	newStateListeners   []NewStateCallback
 	newStateListenersMu sync.RWMutex
 }
 
@@ -132,13 +130,13 @@ var (
 	ErrInvalidPrivateRootKey = errors.New("invalid private root key")
 )
 
-func (m *controllerHub) AddTx(tx *Tx) error {
-	if tx.IsPrivate() {
-		parts := strings.Split(tx.StateURI, "/")
-		if parts[len(parts)-1] != tx.PrivateRootKey() {
-			return errors.Wrapf(ErrInvalidPrivateRootKey, "got %v, expected %v", parts[len(parts)-1], tx.PrivateRootKey())
-		}
-	}
+func (m *controllerHub) AddTx(tx Tx) error {
+	// if tx.IsPrivate() {
+	// 	parts := strings.Split(tx.StateURI, "/")
+	// 	if parts[len(parts)-1] != tx.PrivateRootKey() {
+	// 		return errors.Wrapf(ErrInvalidPrivateRootKey, "got %v, expected %v", parts[len(parts)-1], tx.PrivateRootKey())
+	// 	}
+	// }
 
 	ctrl, err := m.EnsureController(tx.StateURI)
 	if err != nil {
@@ -151,7 +149,7 @@ func (m *controllerHub) FetchTxs(stateURI string, fromTxID types.ID) TxIterator 
 	return m.txStore.AllTxsForStateURI(stateURI, fromTxID)
 }
 
-func (m *controllerHub) FetchTx(stateURI string, txID types.ID) (*Tx, error) {
+func (m *controllerHub) FetchTx(stateURI string, txID types.ID) (Tx, error) {
 	return m.txStore.FetchTx(stateURI, txID)
 }
 
@@ -185,46 +183,46 @@ func (m *controllerHub) Leaves(stateURI string) ([]types.ID, error) {
 	return m.txStore.Leaves(stateURI)
 }
 
-func (m *controllerHub) IsPrivate(stateURI string) (bool, error) {
-	m.controllersMu.RLock()
-	defer m.controllersMu.RUnlock()
+// func (m *controllerHub) IsPrivate(stateURI string) (bool, error) {
+// 	m.controllersMu.RLock()
+// 	defer m.controllersMu.RUnlock()
 
-	ctrl := m.controllers[stateURI]
-	if ctrl == nil {
-		return false, errors.Wrapf(ErrNoController, stateURI)
-	}
-	return ctrl.IsPrivate()
-}
+// 	ctrl := m.controllers[stateURI]
+// 	if ctrl == nil {
+// 		return false, errors.Wrapf(ErrNoController, stateURI)
+// 	}
+// 	return ctrl.IsPrivate()
+// }
 
-func (m *controllerHub) IsMember(stateURI string, addr types.Address) (bool, error) {
-	m.controllersMu.RLock()
-	defer m.controllersMu.RUnlock()
+// func (m *controllerHub) IsMember(stateURI string, addr types.Address) (bool, error) {
+// 	m.controllersMu.RLock()
+// 	defer m.controllersMu.RUnlock()
 
-	ctrl := m.controllers[stateURI]
-	if ctrl == nil {
-		return false, errors.Wrapf(ErrNoController, stateURI)
-	}
-	return ctrl.IsMember(addr)
-}
+// 	ctrl := m.controllers[stateURI]
+// 	if ctrl == nil {
+// 		return false, errors.Wrapf(ErrNoController, stateURI)
+// 	}
+// 	return ctrl.IsMember(addr)
+// }
 
-func (m *controllerHub) Members(stateURI string) (utils.AddressSet, error) {
-	m.controllersMu.RLock()
-	defer m.controllersMu.RUnlock()
+// func (m *controllerHub) Members(stateURI string) (utils.AddressSet, error) {
+// 	m.controllersMu.RLock()
+// 	defer m.controllersMu.RUnlock()
 
-	ctrl := m.controllers[stateURI]
-	if ctrl == nil {
-		return nil, errors.Wrapf(ErrNoController, stateURI)
-	}
-	return ctrl.Members()
-}
+// 	ctrl := m.controllers[stateURI]
+// 	if ctrl == nil {
+// 		return nil, errors.Wrapf(ErrNoController, stateURI)
+// 	}
+// 	return ctrl.Members()
+// }
 
-func (m *controllerHub) OnNewState(fn func(tx *Tx, root state.Node, leaves []types.ID)) {
+func (m *controllerHub) OnNewState(fn NewStateCallback) {
 	m.newStateListenersMu.Lock()
 	defer m.newStateListenersMu.Unlock()
 	m.newStateListeners = append(m.newStateListeners, fn)
 }
 
-func (m *controllerHub) notifyNewStateListeners(tx *Tx, root state.Node, leaves []types.ID) {
+func (m *controllerHub) notifyNewStateListeners(tx Tx, root state.Node, leaves []types.ID) {
 	m.newStateListenersMu.RLock()
 	defer m.newStateListenersMu.RUnlock()
 

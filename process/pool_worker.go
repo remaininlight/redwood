@@ -68,9 +68,7 @@ func (w *poolWorker) Start() error {
 				}
 				item := x.(PoolWorkerItem)
 
-				fmt.Println("WORK", item.(ID).ID())
 				retry := item.Work(ctx)
-				fmt.Println("  -", item.(ID).ID(), retry, w.scheduler.RetryWhen(item))
 				if retry {
 					w.pool.RetryLater(item, w.scheduler.RetryWhen(item))
 				} else {
@@ -102,6 +100,8 @@ type StaticScheduler struct {
 	checkForRetriesInterval time.Duration
 	retryAfter              time.Duration
 }
+
+var _ PoolWorkerScheduler = StaticScheduler{}
 
 func NewStaticScheduler(checkForRetriesInterval time.Duration, retryAfter time.Duration) StaticScheduler {
 	return StaticScheduler{checkForRetriesInterval, retryAfter}

@@ -245,7 +245,7 @@ func (c *LightClient) Get(stateURI string, version *types.ID, keypath state.Keyp
 	return resp.Body, int64(contentLength), parents, nil
 }
 
-func (c *LightClient) Put(ctx context.Context, tx *tree.Tx, recipientAddress types.Address, recipientEncPubkey crypto.AsymEncPubkey) error {
+func (c *LightClient) Put(ctx context.Context, tx tree.Tx, recipientAddress types.Address, recipientEncPubkey crypto.AsymEncPubkey) error {
 	if len(tx.Sig) == 0 {
 		sig, err := c.sigkeys.SignHash(tx.Hash())
 		if err != nil {
@@ -254,7 +254,7 @@ func (c *LightClient) Put(ctx context.Context, tx *tree.Tx, recipientAddress typ
 		tx.Sig = sig
 	}
 
-	req, err := putRequestFromTx(ctx, tx, c.dialAddr, c.enckeys, recipientAddress, recipientEncPubkey)
+	req, err := putRequestFromTx(ctx, tx, c.dialAddr)
 	if err != nil {
 		return errors.WithStack(err)
 	}

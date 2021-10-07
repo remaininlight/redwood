@@ -3,6 +3,7 @@ package cmdutils
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net/http"
@@ -252,6 +253,7 @@ func (app *App) Start() error {
 
 		app.TreeProto = prototree.NewTreeProtocol(
 			transports,
+			app.HushProto,
 			app.ControllerHub,
 			app.TxStore,
 			app.KeyStore,
@@ -428,10 +430,15 @@ func (app *App) EnsureInitialState(stateURI string, checkKeypath string, value i
 		node.Close()
 	}
 
+	valueBytes, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+
 	err = app.TreeProto.SendTx(context.Background(), tree.Tx{
 		StateURI: stateURI,
 		ID:       tree.GenesisTxID,
-		Patches:  []tree.Patch{{Val: value}},
+		Patches:  []tree.Patch{{ValueJSON: valueBytes}},
 	})
 	if err != nil {
 		panic(err)
@@ -508,7 +515,7 @@ func (app *App) startREPL(prompt string, replCommands []REPLCommand) {
 
 		err := cmd.Handler(parts[1:], app)
 		if err != nil {
-			app.Error(err)
+			app.Errorf("%+v", err)
 		}
 	}
 }

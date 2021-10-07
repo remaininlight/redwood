@@ -3,6 +3,8 @@ package protohush
 import (
 	"bytes"
 
+	"github.com/pkg/errors"
+
 	"redwood.dev/swarm/protohush/pb"
 	"redwood.dev/types"
 )
@@ -16,8 +18,10 @@ type DHPubkeyAttestation = pb.DHPubkeyAttestation
 type IndividualMessage = pb.IndividualMessage
 type IndividualMessageHeader = pb.IndividualMessage_Header
 
-// type GroupSession = pb.GroupSession
-// type GroupMessage = pb.GroupMessage
+// type GroupSessionID = pb.GroupSessionID
+// type GroupSessionProposal = pb.GroupSessionProposal
+type GroupMessage = pb.GroupMessage
+type GroupMessage_EncryptionKey = pb.GroupMessage_EncryptionKey
 
 var GenerateSharedKey = pb.GenerateSharedKey
 var IndividualMessageFromDoubleRatchetMessage = pb.IndividualMessageFromDoubleRatchetMessage
@@ -38,9 +42,20 @@ type IndividualMessageIntent struct {
 	Plaintext   []byte        `tree:"plaintext"`
 }
 
+type GroupMessageIntent struct {
+	SessionType string          `tree:"sessionType"`
+	ID          string          `tree:"id"`
+	Recipients  []types.Address `tree:"recipients"`
+	Plaintext   []byte          `tree:"plaintext"`
+}
+
 func addrsSorted(alice, bob types.Address) (types.Address, types.Address) {
 	if bytes.Compare(alice.Bytes(), bob.Bytes()) < 0 {
 		return alice, bob
 	}
 	return bob, alice
 }
+
+var (
+	ErrRecipientIsSelf = errors.New("recipient is self")
+)
